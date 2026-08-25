@@ -62,4 +62,36 @@ public sealed class RemixFilterBuilderTests
         StringAssert.Contains(filter, "offset=1.5");
         StringAssert.Contains(filter, "linear=true");
     }
+
+    [TestMethod]
+    public void Build_CreatesMasteringFilters()
+    {
+        RemixEffect[] rack =
+        [
+            new HighPassEffect(35),
+            new LowPassEffect(18_000),
+            new CompressorEffect(-18, 3, 2),
+            new StereoWidthEffect(1.2),
+            new SoftLimiterEffect(-1),
+        ];
+
+        var filter = RemixFilterBuilder.Build(rack, 48_000, 100, preview: false);
+
+        StringAssert.Contains(filter, "highpass=f=35");
+        StringAssert.Contains(filter, "lowpass=f=18000");
+        StringAssert.Contains(filter, "acompressor=threshold=0.126:ratio=3:attack=20:release=250:makeup=1.259");
+        StringAssert.Contains(filter, "stereotools=mlev=1:slev=1.2");
+        StringAssert.Contains(filter, "alimiter=limit=0.891:level=false");
+    }
+
+    [TestMethod]
+    public void Build_FallsBackToSinglePassForInfiniteSilenceMeasurements()
+    {
+        RemixEffect[] rack = [new LoudnessNormalizeEffect(-14)];
+        var measurement = new LoudnessMeasurements(double.NegativeInfinity, double.NegativeInfinity, 0, -70, double.PositiveInfinity);
+
+        var filter = RemixFilterBuilder.Build(rack, 44_100, 10, preview: false, measurement);
+
+        Assert.AreEqual("loudnorm=I=-14:TP=-1.5:LRA=11", filter);
+    }
 }

@@ -17,6 +17,15 @@ internal static class AudioConverterCli
 
     public static async Task<int> RunAsync(string[] args)
     {
+        using var cancellation = new CancellationTokenSource();
+        ConsoleCancelEventHandler handler = (_, eventArgs) => { eventArgs.Cancel = true; cancellation.Cancel(); };
+        Console.CancelKeyPress += handler;
+        try { return await RunCoreAsync(args, cancellation.Token); }
+        finally { Console.CancelKeyPress -= handler; }
+    }
+
+    private static async Task<int> RunCoreAsync(string[] args, CancellationToken cancellationToken)
+    {
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
         {
             PrintHelp(); return 0;
@@ -26,13 +35,13 @@ internal static class AudioConverterCli
             if (args.Contains("--install-ffmpeg"))
             {
                 var progress = new Progress<(double Fraction, string Status)>(item => Console.WriteLine($"{item.Fraction,6:P0}  {item.Status}"));
-                var installed = await new FfmpegInstaller().InstallAsync(progress: progress);
+                var installed = await new FfmpegInstaller().InstallAsync(progress: progress, cancellationToken: cancellationToken);
                 Console.WriteLine($"Installed: {installed.FfmpegPath}"); return 0;
             }
 
             if (args.Contains("--compress-profile") || args.Contains("--target-total-mb"))
             {
-                return await RunCompressionAsync(args);
+                return await RunCompressionAsync(args, cancellationToken);
             }
 
             var source = args[0];
@@ -61,7 +70,7 @@ internal static class AudioConverterCli
                 var input = files[index];
                 try
                 {
-                    var info = await probe.ProbeAsync(input);
+                    var info = await probe.ProbeAsync(input, cancellationToken);
                     var directory = outputDirectory ?? Path.Combine(Path.GetDirectoryName(input)!, "converted");
                     Directory.CreateDirectory(directory);
                     var output = OutputPathBuilder.Build(input, directory, format, suffix);
@@ -74,18 +83,20 @@ internal static class AudioConverterCli
                     if (trimStart is not null || trimEnd is not null || fadeIn > 0 || fadeOut > 0)
                     {
                         var selection = TrimSelection.Create(trimStart ?? 0, trimEnd ?? info.DurationSeconds, fadeIn, fadeOut);
-                        await audio.TrimAsync(input, output, options, selection, progress);
+                        await audio.TrimAsync(input, output, options, selection, progress, cancellationToken);
                     }
                     else
                     {
-                        await audio.ConvertAsync(input, output, options, info.DurationSeconds, progress);
+                        await audio.ConvertAsync(input, output, options, info.DurationSeconds, progress, cancellationToken);
                     }
                     Console.WriteLine($"\rOK   {input} -> {output}                              "); succeeded++;
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception error) { Console.WriteLine($"FAIL {input}: {error.Message}"); failed++; }
             }
             Console.WriteLine($"Completed: {succeeded} succeeded, {failed} failed"); return failed == 0 ? 0 : 2;
         }
+        catch (OperationCanceledException) { Console.Error.WriteLine("Cancelled."); return 130; }
         catch (Exception error) { Console.Error.WriteLine($"Error: {error.Message}"); return 1; }
     }
 
@@ -96,7 +107,7 @@ internal static class AudioConverterCli
         return Directory.EnumerateFiles(source).Where(path => { try { _ = AudioFormats.FromPath(path); return true; } catch { return false; } });
     }
 
-    private static async Task<int> RunCompressionAsync(string[] args)
+    private static async Task<int> RunCompressionAsync(string[] args, CancellationToken cancellationToken)
     {
         var source = args[0];
         if (source.StartsWith('-')) throw new ArgumentException("The first argument must be an audio file or folder.");
@@ -142,7 +153,7 @@ internal static class AudioConverterCli
         {
             try
             {
-                var info = await probe.ProbeAsync(file.Path);
+                var info = await probe.ProbeAsync(file.Path, cancellationToken);
                 inputs.Add(new CompressionSource(
                     file.Path,
                     file.RelativePath,
@@ -152,6 +163,7 @@ internal static class AudioConverterCli
                     info.AudioBitrateKbps,
                     info.HasCoverArt));
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception error)
             {
                 failures.Add($"FAIL {file.Path}: {error.Message}");
@@ -201,13 +213,15 @@ internal static class AudioConverterCli
                     plan.TargetAudioBitrateKbps,
                     file.Source.DurationSeconds,
                     file.Source.HasCoverArt,
-                    progress);
+                    progress,
+                    cancellationToken);
                 completedDuration += file.Source.DurationSeconds;
                 originalProcessedBytes += file.Source.SizeBytes;
                 outputBytes += new FileInfo(output).Length;
                 succeeded++;
                 Console.WriteLine($"\rOK   {file.Source.Path} -> {output}                              ");
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception error)
             {
                 completedDuration += file.Source.DurationSeconds;

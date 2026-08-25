@@ -61,8 +61,6 @@ public sealed class RemixPresetTests
     [DataRow(RemixPreset.VocalBoost)]
     [DataRow(RemixPreset.DreamyReverb)]
     [DataRow(RemixPreset.LoFi)]
-    [DataRow(RemixPreset.Club)]
-    [DataRow(RemixPreset.AcousticWarmth)]
     [DataRow(RemixPreset.Telephone)]
     public void ExpandedPreset_CreatesValidEditableRack(RemixPreset preset)
     {

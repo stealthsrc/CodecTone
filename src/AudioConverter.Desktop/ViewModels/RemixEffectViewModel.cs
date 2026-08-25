@@ -31,8 +31,8 @@ public sealed class RemixEffectViewModel : ObservableObject
     public double First { get => first; set { if (Set(ref first, value)) changed(); } }
     public double Second { get => second; set { if (Set(ref second, value)) changed(); } }
     public double Third { get => third; set { if (Set(ref third, value)) changed(); } }
-    public bool HasSecond => Kind is RemixEffectKind.Bass or RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo;
-    public bool HasThird => Kind is RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo;
+    public bool HasSecond => Kind is RemixEffectKind.Bass or RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor;
+    public bool HasThird => Kind is RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor;
     public string FirstLabel => Kind switch
     {
         RemixEffectKind.TempoPitch => "Rate · 0.50–2.00×",
@@ -43,6 +43,10 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Volume => "Gain · dB",
         RemixEffectKind.FadeIn or RemixEffectKind.FadeOut => "Duration · seconds",
         RemixEffectKind.LoudnessNormalize => "Target · LUFS",
+        RemixEffectKind.Compressor => "Threshold · dB",
+        RemixEffectKind.StereoWidth => "Width · 0–2",
+        RemixEffectKind.HighPass or RemixEffectKind.LowPass => "Frequency · Hz",
+        RemixEffectKind.SoftLimiter => "Ceiling · dB",
         _ => "Value",
     };
     public string SecondLabel => Kind switch
@@ -51,6 +55,7 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Equalizer => "Mid · dB",
         RemixEffectKind.Reverb => "Decay · seconds",
         RemixEffectKind.Echo => "Feedback · 0–0.9",
+        RemixEffectKind.Compressor => "Ratio · 1–10",
         _ => "",
     };
     public string ThirdLabel => Kind switch
@@ -58,6 +63,7 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Equalizer => "High · dB",
         RemixEffectKind.Reverb => "Room size · 0–1",
         RemixEffectKind.Echo => "Wet mix · 0–1",
+        RemixEffectKind.Compressor => "Makeup · dB",
         _ => "",
     };
 
@@ -72,6 +78,11 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.FadeIn => new FadeInEffect(First, Enabled),
         RemixEffectKind.FadeOut => new FadeOutEffect(First, Enabled),
         RemixEffectKind.LoudnessNormalize => new LoudnessNormalizeEffect(First, Enabled),
+        RemixEffectKind.Compressor => new CompressorEffect(First, Second, Third, Enabled),
+        RemixEffectKind.StereoWidth => new StereoWidthEffect(First, Enabled),
+        RemixEffectKind.HighPass => new HighPassEffect(First, Enabled),
+        RemixEffectKind.LowPass => new LowPassEffect(First, Enabled),
+        RemixEffectKind.SoftLimiter => new SoftLimiterEffect(First, Enabled),
         _ => throw new ArgumentOutOfRangeException(),
     };
 
@@ -89,6 +100,11 @@ public sealed class RemixEffectViewModel : ObservableObject
             FadeInEffect value => (value.DurationSeconds, 0, 0),
             FadeOutEffect value => (value.DurationSeconds, 0, 0),
             LoudnessNormalizeEffect value => (value.TargetLufs, 0, 0),
+            CompressorEffect value => (value.ThresholdDb, value.Ratio, value.MakeupDb),
+            StereoWidthEffect value => (value.Width, 0, 0),
+            HighPassEffect value => (value.FrequencyHz, 0, 0),
+            LowPassEffect value => (value.FrequencyHz, 0, 0),
+            SoftLimiterEffect value => (value.CeilingDb, 0, 0),
             _ => (0, 0, 0),
         };
         return viewModel;
@@ -104,6 +120,11 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Volume => (0, 0, 0),
         RemixEffectKind.FadeIn or RemixEffectKind.FadeOut => (3, 0, 0),
         RemixEffectKind.LoudnessNormalize => (-14, 0, 0),
+        RemixEffectKind.Compressor => (-18, 2, 1),
+        RemixEffectKind.StereoWidth => (1.1, 0, 0),
+        RemixEffectKind.HighPass => (30, 0, 0),
+        RemixEffectKind.LowPass => (18_000, 0, 0),
+        RemixEffectKind.SoftLimiter => (-1, 0, 0),
         _ => (0, 0, 0),
     };
 }

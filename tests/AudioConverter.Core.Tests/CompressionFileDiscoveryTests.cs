@@ -46,4 +46,5 @@ public sealed class CompressionFileDiscoveryTests
             Directory.Delete(root, true);
         }
     }
+
 }

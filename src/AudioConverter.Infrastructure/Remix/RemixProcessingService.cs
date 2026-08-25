@@ -16,7 +16,9 @@ public sealed class RemixProcessingService(FfmpegTools tools)
 
     public void CleanupTemporaryFiles()
     {
-        File.Delete(AppPaths.RemixPreviewWave);
+        try { File.Delete(AppPaths.RemixPreviewWave); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
         if (!Directory.Exists(AppPaths.RemixStaging)) return;
         foreach (var file in Directory.EnumerateFiles(AppPaths.RemixStaging))
         {
@@ -151,7 +153,7 @@ public sealed class RemixProcessingService(FfmpegTools tools)
         using var process = Process.Start(info) ?? throw new FfmpegExecutionException("FFmpeg loudness analysis could not start.");
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        await FfmpegProcessRunner.WaitForExitOrKillAsync(process, cancellationToken);
         _ = await outputTask;
         var error = await errorTask;
         if (process.ExitCode != 0) throw new FfmpegExecutionException($"Loudness analysis failed: {error.Trim()}");

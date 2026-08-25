@@ -68,4 +68,13 @@ public sealed class FfmpegCommandBuilderTests
         CollectionAssert.Contains(args.ToList(), "44100");
         Assert.AreEqual("preview.wav", args[^1]);
     }
+
+    [TestMethod]
+    public void BuildWaveform_BoundsDecodedSamplesForVeryLongAudio()
+    {
+        var args = FfmpegCommandBuilder.BuildWaveform("long.flac", width: 900, durationSeconds: 36_000);
+
+        var sampleRate = args[Array.IndexOf(args, "-ar") + 1];
+        Assert.AreEqual("10", sampleRate);
+    }
 }

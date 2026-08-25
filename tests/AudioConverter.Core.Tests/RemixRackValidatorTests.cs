@@ -46,4 +46,14 @@ public sealed class RemixRackValidatorTests
 
         Assert.AreEqual(150, RemixRackValidator.CalculateOutputDuration(120, rack), 0.001);
     }
+
+    [TestMethod]
+    public void Validate_RejectsUnsafeMasteringValues()
+    {
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new CompressorEffect(-18, 12, 2)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new StereoWidthEffect(2.5)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new HighPassEffect(10)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new LowPassEffect(500)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new SoftLimiterEffect(0)], 120));
+    }
 }

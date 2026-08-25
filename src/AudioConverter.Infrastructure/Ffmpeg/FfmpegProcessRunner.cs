@@ -26,12 +26,21 @@ public sealed class FfmpegProcessRunner
 
         progress?.Report(0);
         var diagnosticsTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+        var waitTask = WaitForExitOrKillAsync(process, cancellationToken);
+        try
         {
-            var value = FfmpegProgressParser.Parse(line.Trim(), durationSeconds);
-            if (value is not null) progress?.Report(value.Value);
+            while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+            {
+                var value = FfmpegProgressParser.Parse(line.Trim(), durationSeconds);
+                if (value is not null) progress?.Report(value.Value);
+            }
+            await waitTask;
         }
-        await process.WaitForExitAsync(cancellationToken);
+        catch (OperationCanceledException)
+        {
+            try { await waitTask; } catch (OperationCanceledException) { }
+            throw new OperationCanceledException(cancellationToken);
+        }
         var diagnostics = await diagnosticsTask;
         if (process.ExitCode != 0)
         {
@@ -39,6 +48,29 @@ public sealed class FfmpegProcessRunner
             throw new FfmpegExecutionException($"FFmpeg a échoué (code {process.ExitCode}) : {tail}");
         }
         progress?.Report(1);
+    }
+
+    public static async Task WaitForExitOrKillAsync(Process process, CancellationToken cancellationToken)
+    {
+        using var registration = cancellationToken.Register(() => TryKill(process));
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            try { await process.WaitForExitAsync(CancellationToken.None); }
+            catch (InvalidOperationException) { }
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private static void TryKill(Process process)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 
     public static ProcessStartInfo CreateStartInfo(

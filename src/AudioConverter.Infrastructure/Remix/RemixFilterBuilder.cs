@@ -98,6 +98,11 @@ public static class RemixFilterBuilder
         FadeInEffect value => $"afade=t=in:st=0:d={Number(value.DurationSeconds)}",
         FadeOutEffect value => $"afade=t=out:st={Number(outputDuration - value.DurationSeconds)}:d={Number(value.DurationSeconds)}",
         LoudnessNormalizeEffect value => BuildLoudness(value, preview, measurement),
+        CompressorEffect value => $"acompressor=threshold={Number(DbToLinear(value.ThresholdDb))}:ratio={Number(value.Ratio)}:attack=20:release=250:makeup={Number(DbToLinear(value.MakeupDb))}",
+        StereoWidthEffect value => $"aformat=channel_layouts=stereo,stereotools=mlev=1:slev={Number(value.Width)}",
+        HighPassEffect value => $"highpass=f={Number(value.FrequencyHz)}",
+        LowPassEffect value => $"lowpass=f={Number(value.FrequencyHz)}",
+        SoftLimiterEffect value => $"alimiter=limit={Number(DbToLinear(value.CeilingDb))}:level=false",
         _ => "anull",
     };
 
@@ -114,7 +119,12 @@ public static class RemixFilterBuilder
         LoudnessMeasurements? measurement)
     {
         var prefix = $"loudnorm=I={Number(effect.TargetLufs)}:TP=-1.5:LRA=11";
-        if (preview || measurement is null) return prefix;
+        if (preview || measurement is null
+            || !double.IsFinite(measurement.InputIntegrated)
+            || !double.IsFinite(measurement.InputTruePeak)
+            || !double.IsFinite(measurement.InputLoudnessRange)
+            || !double.IsFinite(measurement.InputThreshold)
+            || !double.IsFinite(measurement.TargetOffset)) return prefix;
         return prefix
             + $":measured_I={Number(measurement.InputIntegrated)}"
             + $":measured_TP={Number(measurement.InputTruePeak)}"
@@ -125,4 +135,6 @@ public static class RemixFilterBuilder
 
     private static string Number(double value) =>
         value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static double DbToLinear(double value) => Math.Pow(10, value / 20);
 }

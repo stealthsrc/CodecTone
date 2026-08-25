@@ -10,14 +10,6 @@ public static class FfmpegLocator
         string? appDataRoot = null,
         Func<string, string?>? pathResolver = null)
     {
-        pathResolver ??= ResolveFromPath;
-        var systemFfmpeg = pathResolver("ffmpeg.exe") ?? pathResolver("ffmpeg");
-        var systemFfprobe = pathResolver("ffprobe.exe") ?? pathResolver("ffprobe");
-        if (systemFfmpeg is not null && systemFfprobe is not null)
-        {
-            return new FfmpegTools(systemFfmpeg, systemFfprobe);
-        }
-
         var bin = Path.Combine(
             appDataRoot ?? Storage.AppPaths.Root,
             "runtime", "ffmpeg", "bin");
@@ -26,6 +18,16 @@ public static class FfmpegLocator
         if (File.Exists(managedFfmpeg) && File.Exists(managedFfprobe))
         {
             return new FfmpegTools(managedFfmpeg, managedFfprobe);
+        }
+
+        pathResolver ??= ResolveFromPath;
+        var systemFfmpeg = pathResolver("ffmpeg.exe") ?? pathResolver("ffmpeg");
+        var systemFfprobe = pathResolver("ffprobe.exe") ?? pathResolver("ffprobe");
+        if (systemFfmpeg is not null && systemFfprobe is not null
+            && Path.GetDirectoryName(Path.GetFullPath(systemFfmpeg))?.Equals(
+                Path.GetDirectoryName(Path.GetFullPath(systemFfprobe)), StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return new FfmpegTools(systemFfmpeg, systemFfprobe);
         }
 
         throw new FfmpegDependencyException(

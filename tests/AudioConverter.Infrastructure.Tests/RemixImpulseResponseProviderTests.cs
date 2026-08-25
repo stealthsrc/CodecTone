@@ -24,4 +24,25 @@ public sealed class RemixImpulseResponseProviderTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [TestMethod]
+    public void EnsureExtracted_RepairsSameLengthCorruption()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var path = RemixImpulseResponseProvider.EnsureExtracted(root);
+            var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+            File.WriteAllBytes(path, new byte[new FileInfo(path).Length]);
+
+            RemixImpulseResponseProvider.EnsureExtracted(root);
+
+            var repairedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
+            Assert.AreEqual(expectedHash, repairedHash);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

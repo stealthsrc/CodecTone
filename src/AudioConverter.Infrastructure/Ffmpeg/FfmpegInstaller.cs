@@ -68,7 +68,9 @@ public sealed class FfmpegInstaller(HttpClient? client = null)
         }
         finally
         {
-            if (Directory.Exists(temporaryRoot)) Directory.Delete(temporaryRoot, true);
+            try { if (Directory.Exists(temporaryRoot)) Directory.Delete(temporaryRoot, true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -154,7 +156,7 @@ public sealed class FfmpegInstaller(HttpClient? client = null)
         var info = FfmpegProcessRunner.CreateStartInfo(path, ["-version"], true);
         using var process = Process.Start(info) ?? throw new FfmpegInstallException($"{Path.GetFileName(path)} n’a pas pu démarrer.");
         var firstLine = await process.StandardOutput.ReadLineAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        await FfmpegProcessRunner.WaitForExitOrKillAsync(process, cancellationToken);
         if (process.ExitCode != 0 || firstLine is null || !firstLine.StartsWith(prefix, StringComparison.Ordinal))
         {
             throw new FfmpegInstallException($"{Path.GetFileName(path)} a échoué lors de sa validation.");

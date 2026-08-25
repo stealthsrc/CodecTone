@@ -24,8 +24,13 @@ public static class LoudnessParser
             Read(root, "target_offset"));
     }
 
-    private static double Read(JsonElement root, string name) =>
-        double.TryParse(root.GetProperty(name).GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+    private static double Read(JsonElement root, string name)
+    {
+        var text = root.GetProperty(name).GetString();
+        if (text?.Equals("-inf", StringComparison.OrdinalIgnoreCase) == true) return double.NegativeInfinity;
+        if (text?.Equals("inf", StringComparison.OrdinalIgnoreCase) == true || text?.Equals("+inf", StringComparison.OrdinalIgnoreCase) == true) return double.PositiveInfinity;
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             ? value
             : throw new InvalidDataException($"Invalid loudness value: {name}");
+    }
 }

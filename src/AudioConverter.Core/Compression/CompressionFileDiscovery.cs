@@ -23,8 +23,7 @@ public static class CompressionFileDiscovery
         if (!Directory.Exists(source)) throw new FileNotFoundException("Compression source not found.", source);
 
         var rootDirectory = Path.GetFullPath(source);
-        var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-        return Directory.EnumerateFiles(rootDirectory, "*", searchOption)
+        return EnumerateFilesSafely(rootDirectory, recursive)
             .Where(IsSupported)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .Select(path => new CompressionDiscoveredFile(
@@ -32,6 +31,33 @@ public static class CompressionFileDiscovery
                 rootDirectory,
                 Path.GetRelativePath(rootDirectory, path)))
             .ToArray();
+    }
+
+    private static IEnumerable<string> EnumerateFilesSafely(string root, bool recursive)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            string[] files;
+            try { files = Directory.GetFiles(directory); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var file in files) yield return file;
+            if (!recursive) continue;
+
+            string[] children;
+            try { children = Directory.GetDirectories(directory); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var child in children)
+            {
+                try
+                {
+                    if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) pending.Push(child);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            }
+        }
     }
 
     private static bool IsSupported(string path)

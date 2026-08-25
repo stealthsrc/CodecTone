@@ -38,4 +38,26 @@ public sealed class SettingsStoreTests
             Directory.Delete(root, true);
         }
     }
+
+    [TestMethod]
+    public async Task SaveAsync_SerializesConcurrentWrites()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new JsonSettingsStore(root);
+            var writes = Enumerable.Range(1, 40)
+                .Select(index => store.SaveAsync(new AppSettings(index % 2 == 0 ? "Oled" : "White", $"C:\\Audio\\{index}")));
+
+            await Task.WhenAll(writes);
+
+            var loaded = await store.LoadAsync();
+            Assert.IsTrue(loaded.LastOutputDirectory?.StartsWith("C:\\Audio\\", StringComparison.Ordinal) == true);
+            Assert.AreEqual(0, Directory.GetFiles(root, "*.tmp").Length);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

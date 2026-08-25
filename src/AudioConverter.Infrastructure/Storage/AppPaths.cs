@@ -9,4 +9,5 @@ public static class AppPaths
     public static string PreviewWave => Path.Combine(Root, "preview", "selection.wav");
     public static string RemixPreviewWave => Path.Combine(Root, "remix", "preview.wav");
     public static string RemixStaging => Path.Combine(Root, "remix", "staging");
+    public static string RemixAnalysis => Path.Combine(Root, "remix", "analysis");
 }

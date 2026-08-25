@@ -136,11 +136,17 @@ public static class FfmpegCommandBuilder
         return [.. args];
     }
 
-    public static string[] BuildWaveform(string inputPath) =>
+    public static string[] BuildWaveform(string inputPath, int width, double durationSeconds)
+    {
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+        if (!double.IsFinite(durationSeconds) || durationSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(durationSeconds));
+        var sampleRate = (int)Math.Clamp(Math.Ceiling(width * 4d / durationSeconds), 10, 1000);
+        return
     [
         "-hide_banner", "-loglevel", "error", "-i", inputPath, "-map", "0:a:0",
-        "-vn", "-ac", "1", "-ar", "1000", "-f", "s16le", "pipe:1",
+        "-vn", "-ac", "1", "-ar", sampleRate.ToString(CultureInfo.InvariantCulture), "-f", "s16le", "pipe:1",
     ];
+    }
 
     private static void AddEncoding(List<string> args, ConversionOptions options)
     {

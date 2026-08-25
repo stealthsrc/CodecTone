@@ -51,7 +51,8 @@ public static class FfprobeParser
             tags,
             ReadLong(format, "size"),
             ToKbps(ReadLong(audio.Value, "bit_rate")),
-            ToKbps(ReadLong(format, "bit_rate")));
+            ToKbps(ReadLong(format, "bit_rate")),
+            ReadInt(audio.Value, "channels"));
     }
 
     private static string? ReadString(JsonElement element, string name) =>

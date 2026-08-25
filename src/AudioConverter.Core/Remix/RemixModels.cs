@@ -2,7 +2,6 @@ namespace AudioConverter.Core.Remix;
 
 public enum RemixPreset
 {
-    Custom,
     BassBoost,
     SlowedReverb,
     SpedUpReverb,
@@ -11,10 +10,63 @@ public enum RemixPreset
     VocalBoost,
     DreamyReverb,
     LoFi,
-    Club,
-    AcousticWarmth,
     Telephone,
+    DeepSlowed,
+    HalfTime,
+    WarmBass,
+    SubFocus,
+    ClubPunch,
+    LightRoom,
+    WideHall,
+    AmbientWash,
+    EchoSpace,
+    VocalPresence,
+    SoftVocal,
+    DeMud,
+    ClearMix,
+    Radio,
+    VintageWarm,
+    DarkTone,
+    BrightTone,
+    CleanMaster,
+    LoudMaster,
+    DynamicMaster,
+    WideMaster,
+    StreamingMaster,
+    ClubMaster,
 }
+
+public enum RemixPresetCategory
+{
+    SpeedPitch,
+    BassPunch,
+    Atmosphere,
+    VocalClarity,
+    ColorTexture,
+    Mastering,
+}
+
+public enum RemixIntensity { Light, Medium, Strong }
+
+public sealed record AudioAnalysis(
+    double IntegratedLufs,
+    double TruePeakDb,
+    double LoudnessRange,
+    double CrestFactorDb,
+    double LowEnergyDb,
+    double MidEnergyDb,
+    double HighEnergyDb,
+    double StereoWidth,
+    double DurationSeconds,
+    int SampleRate,
+    int Channels);
+
+public sealed record RemixPresetDefinition(RemixPreset Preset, string Name, RemixPresetCategory Category);
+
+public sealed record AdaptiveRemixRack(
+    IReadOnlyList<RemixEffect> Rack,
+    bool IsAdaptive,
+    string Explanation);
 
 public enum RemixEffectKind
 {
@@ -27,6 +79,11 @@ public enum RemixEffectKind
     FadeIn,
     FadeOut,
     LoudnessNormalize,
+    Compressor,
+    StereoWidth,
+    HighPass,
+    LowPass,
+    SoftLimiter,
 }
 
 public abstract record RemixEffect(RemixEffectKind Kind, bool Enabled = true);
@@ -57,6 +114,21 @@ public sealed record FadeOutEffect(double DurationSeconds, bool IsEnabled = true
 
 public sealed record LoudnessNormalizeEffect(double TargetLufs, bool IsEnabled = true)
     : RemixEffect(RemixEffectKind.LoudnessNormalize, IsEnabled);
+
+public sealed record CompressorEffect(double ThresholdDb, double Ratio, double MakeupDb, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.Compressor, IsEnabled);
+
+public sealed record StereoWidthEffect(double Width, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.StereoWidth, IsEnabled);
+
+public sealed record HighPassEffect(double FrequencyHz, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.HighPass, IsEnabled);
+
+public sealed record LowPassEffect(double FrequencyHz, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.LowPass, IsEnabled);
+
+public sealed record SoftLimiterEffect(double CeilingDb, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.SoftLimiter, IsEnabled);
 
 public enum CoverArtAction
 {

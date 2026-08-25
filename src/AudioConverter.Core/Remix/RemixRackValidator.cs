@@ -68,11 +68,21 @@ public static class RemixRackValidator
             case FadeInEffect value: Require(value.DurationSeconds, 0, Math.Min(30, sourceDuration), "Fade In duration"); break;
             case FadeOutEffect value: Require(value.DurationSeconds, 0, Math.Min(30, sourceDuration), "Fade Out duration"); break;
             case LoudnessNormalizeEffect value: Require(value.TargetLufs, -24, -8, "Loudness target"); break;
+            case CompressorEffect value:
+                Require(value.ThresholdDb, -40, -3, "Compressor threshold");
+                Require(value.Ratio, 1, 10, "Compressor ratio");
+                Require(value.MakeupDb, 0, 12, "Compressor makeup");
+                break;
+            case StereoWidthEffect value: Require(value.Width, 0, 2, "Stereo width"); break;
+            case HighPassEffect value: Require(value.FrequencyHz, 20, 500, "High-pass frequency"); break;
+            case LowPassEffect value: Require(value.FrequencyHz, 1_000, 20_000, "Low-pass frequency"); break;
+            case SoftLimiterEffect value: Require(value.CeilingDb, -6, -0.1, "Limiter ceiling"); break;
         }
     }
 
     private static bool IsGainOrToneEffect(RemixEffect effect) =>
-        effect is BassEffect or EqualizerEffect or ReverbEffect or EchoEffect or VolumeEffect;
+        effect is BassEffect or EqualizerEffect or ReverbEffect or EchoEffect or VolumeEffect
+            or CompressorEffect or StereoWidthEffect or HighPassEffect or LowPassEffect;
 
     private static void RejectDuplicate<T>(IEnumerable<RemixEffect> effects, string name)
         where T : RemixEffect

@@ -26,4 +26,17 @@ public sealed class LoudnessParserTests
         Assert.AreEqual(-30, result.InputThreshold);
         Assert.AreEqual(1.5, result.TargetOffset);
     }
+
+    [TestMethod]
+    public void Parse_AcceptsInfiniteSilenceMeasurements()
+    {
+        const string output = """
+        { "input_i":"-inf", "input_tp":"-inf", "input_lra":"0.00", "input_thresh":"-70.00", "target_offset":"inf" }
+        """;
+
+        var result = LoudnessParser.Parse(output);
+
+        Assert.IsTrue(double.IsNegativeInfinity(result.InputIntegrated));
+        Assert.IsTrue(double.IsPositiveInfinity(result.TargetOffset));
+    }
 }

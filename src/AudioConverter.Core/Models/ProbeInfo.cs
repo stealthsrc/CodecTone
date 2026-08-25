@@ -9,4 +9,5 @@ public sealed record ProbeInfo(
     IReadOnlyDictionary<string, string> Tags,
     long? SizeBytes = null,
     int? AudioBitrateKbps = null,
-    int? ContainerBitrateKbps = null);
+    int? ContainerBitrateKbps = null,
+    int? Channels = null);
