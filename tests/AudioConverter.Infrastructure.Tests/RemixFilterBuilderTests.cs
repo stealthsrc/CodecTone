@@ -7,13 +7,20 @@ namespace AudioConverter.Infrastructure.Tests;
 public sealed class RemixFilterBuilderTests
 {
     [TestMethod]
-    public void Build_UsesCoupledTempoAndReverbInRackOrder()
+    public void BuildGraph_UsesHighQualityTempoThenConvolutionReverb()
     {
         RemixEffect[] rack = [new TempoPitchEffect(0.85), new ReverbEffect(0.28, 2.4)];
 
-        var filter = RemixFilterBuilder.Build(rack, 44_100, 120, preview: true);
+        var graph = RemixFilterBuilder.BuildGraph(rack, 44_100, 120, preview: true, reverbInputIndexes: [1]);
 
-        StringAssert.StartsWith(filter, "asetrate=37485,aresample=44100,aecho=");
+        StringAssert.Contains(graph.Graph, "asetrate=37485,aresample=44100:filter_size=64:phase_shift=10");
+        StringAssert.Contains(graph.Graph, "[1:a]aresample=44100[ir0]");
+        StringAssert.Contains(graph.Graph, "asplit=2[dry0][wetin0]");
+        StringAssert.Contains(graph.Graph, "afir=dry=1:wet=1");
+        StringAssert.Contains(graph.Graph, "amix=inputs=2:weights='0.72 0.28':normalize=0");
+        StringAssert.Contains(graph.Graph, "alimiter=limit=0.84:level=false");
+        Assert.AreEqual("remixout", graph.OutputLabel);
+        Assert.IsFalse(graph.Graph.Contains("aecho", StringComparison.Ordinal));
     }
 
     [TestMethod]

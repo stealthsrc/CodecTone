@@ -54,8 +54,9 @@ is emitted only for MP3, M4A, and FLAC.
 `Load → ffprobe/waveform → preset/rack → 20 s preview → metadata → staged
 export → ffprobe validation → atomic final move`
 
-Tempo/pitch uses `asetrate` and `aresample`. Bass and EQ use their native
-FFmpeg filters. Reverb uses a dense filtered short-echo network; Echo remains a
+Tempo/pitch uses `asetrate` and high-quality `aresample`. Bass and EQ use their native
+FFmpeg filters. Reverb uses `afir` convolution with an embedded, filtered hall
+impulse response, explicit dry/wet mixing, and output limiting; Echo remains a
 distinct delay effect. Preview normalization is single-pass; export
 normalization uses analysis before the final pass.
 

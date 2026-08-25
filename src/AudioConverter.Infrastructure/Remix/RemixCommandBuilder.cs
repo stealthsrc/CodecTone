@@ -14,11 +14,34 @@ public static class RemixCommandBuilder
         int sampleRate,
         double sourceDurationSeconds,
         double previewStartSeconds,
-        double previewDurationSeconds)
+        double previewDurationSeconds,
+        string? reverbImpulsePath = null)
     {
         var end = Math.Min(sourceDurationSeconds, previewStartSeconds + previewDurationSeconds);
-        var rack = RemixFilterBuilder.Build(effects, sampleRate, sourceDurationSeconds, preview: true);
         var filters = $"atrim=start={Number(previewStartSeconds)}:end={Number(end)},asetpts=PTS-STARTPTS";
+        var reverbCount = effects.Count(effect => effect.Enabled && effect is ReverbEffect);
+        if (reverbCount > 0)
+        {
+            if (string.IsNullOrWhiteSpace(reverbImpulsePath))
+                throw new ArgumentException("Reverb requires an impulse-response file.");
+            var arguments = new List<string> { "-hide_banner", "-loglevel", "error", "-y", "-i", inputPath };
+            for (var index = 0; index < reverbCount; index++) arguments.AddRange(["-i", reverbImpulsePath]);
+            var graph = RemixFilterBuilder.BuildGraph(
+                effects,
+                sampleRate,
+                sourceDurationSeconds,
+                preview: true,
+                Enumerable.Range(1, reverbCount).ToArray());
+            var complex = $"[0:a]{filters}[previewin];" + graph.Graph.Replace("[0:a]", "[previewin]", StringComparison.Ordinal);
+            arguments.AddRange([
+                "-filter_complex", complex, "-map", $"[{graph.OutputLabel}]",
+                "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
+                "-progress", "pipe:1", "-nostats", outputPath,
+            ]);
+            return [.. arguments];
+        }
+
+        var rack = RemixFilterBuilder.Build(effects, sampleRate, sourceDurationSeconds, preview: true);
         if (!string.IsNullOrEmpty(rack)) filters += "," + rack;
         return
         [
@@ -38,7 +61,8 @@ public static class RemixCommandBuilder
         int sampleRate,
         double sourceDurationSeconds,
         bool sourceHasCover,
-        LoudnessMeasurements? loudnessMeasurements = null)
+        LoudnessMeasurements? loudnessMeasurements = null,
+        string? reverbImpulsePath = null)
     {
         OptionValidator.Validate(encoding);
         RemixMetadataValidator.Validate(metadata);
@@ -47,15 +71,36 @@ public static class RemixCommandBuilder
             "-hide_banner", "-loglevel", "error", encoding.Overwrite ? "-y" : "-n",
             "-i", inputPath,
         };
+        var reverbCount = effects.Count(effect => effect.Enabled && effect is ReverbEffect);
+        if (reverbCount > 0 && string.IsNullOrWhiteSpace(reverbImpulsePath))
+            throw new ArgumentException("Reverb requires an impulse-response file.");
+        for (var index = 0; index < reverbCount; index++) arguments.AddRange(["-i", reverbImpulsePath!]);
         var replaceCover = metadata.CoverAction == CoverArtAction.Replace;
+        var coverInputIndex = 1 + reverbCount;
         if (replaceCover) arguments.AddRange(["-i", metadata.CoverPath!]);
-        arguments.AddRange(["-map", "0:a:0"]);
+
+        RemixFilterGraph? graph = null;
+        if (reverbCount > 0)
+        {
+            graph = RemixFilterBuilder.BuildGraph(
+                effects,
+                sampleRate,
+                sourceDurationSeconds,
+                preview: false,
+                Enumerable.Range(1, reverbCount).ToArray(),
+                loudnessMeasurements);
+            arguments.AddRange(["-filter_complex", graph.Graph, "-map", $"[{graph.OutputLabel}]"]);
+        }
+        else
+        {
+            arguments.AddRange(["-map", "0:a:0"]);
+        }
 
         var supportsCover = encoding.OutputFormat is AudioFormat.Mp3 or AudioFormat.M4a or AudioFormat.Flac;
         var includeCover = supportsCover && metadata.CoverAction != CoverArtAction.Remove
             && (replaceCover || sourceHasCover);
         if (includeCover)
-            arguments.AddRange(["-map", replaceCover ? "1:v:0" : "0:v:disp:attached_pic?"]);
+            arguments.AddRange(["-map", replaceCover ? $"{coverInputIndex}:v:0" : "0:v:disp:attached_pic?"]);
         else
             arguments.Add("-vn");
 
@@ -64,13 +109,16 @@ public static class RemixCommandBuilder
             : ["-map_metadata", "-1"]);
 
         AddEncoding(arguments, encoding);
-        var filter = RemixFilterBuilder.Build(
-            effects,
-            sampleRate,
-            sourceDurationSeconds,
-            preview: false,
-            loudnessMeasurements);
-        if (!string.IsNullOrEmpty(filter)) arguments.AddRange(["-af", filter]);
+        if (graph is null)
+        {
+            var filter = RemixFilterBuilder.Build(
+                effects,
+                sampleRate,
+                sourceDurationSeconds,
+                preview: false,
+                loudnessMeasurements);
+            if (!string.IsNullOrEmpty(filter)) arguments.AddRange(["-af", filter]);
+        }
         AddMetadata(arguments, metadata);
 
         if (includeCover)

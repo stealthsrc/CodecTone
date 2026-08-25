@@ -12,6 +12,7 @@ public sealed class RemixProcessingService(FfmpegTools tools)
     private const long MaximumCoverBytes = 20L * 1024 * 1024;
     private readonly FfmpegProcessRunner runner = new();
     private readonly FfprobeService probe = new(tools.FfprobePath);
+    private readonly string impulseResponsePath = RemixImpulseResponseProvider.EnsureExtracted();
 
     public void CleanupTemporaryFiles()
     {
@@ -45,7 +46,8 @@ public sealed class RemixProcessingService(FfmpegTools tools)
                 sampleRate,
                 sourceDurationSeconds,
                 previewStartSeconds,
-                20),
+                20,
+                impulseResponsePath),
             Math.Min(20, sourceDurationSeconds - previewStartSeconds),
             progress,
             cancellationToken);
@@ -93,7 +95,8 @@ public sealed class RemixProcessingService(FfmpegTools tools)
                     sampleRate,
                     sourceDurationSeconds,
                     sourceHasCover,
-                    measurement),
+                    measurement,
+                    impulseResponsePath),
                 RemixRackValidator.CalculateOutputDuration(sourceDurationSeconds, effects),
                 progress,
                 cancellationToken);
@@ -121,14 +124,29 @@ public sealed class RemixProcessingService(FfmpegTools tools)
     {
         var normalizeIndex = effects.IndexOf(normalize);
         var preceding = effects.Take(normalizeIndex).ToArray();
-        var filter = RemixFilterBuilder.Build(preceding, sampleRate, sourceDurationSeconds, preview: true);
-        if (!string.IsNullOrEmpty(filter)) filter += ",";
-        filter += $"loudnorm=I={normalize.TargetLufs.ToString("0.###", CultureInfo.InvariantCulture)}:TP=-1.5:LRA=11:print_format=json";
-        var arguments = new[]
+        var loudnorm = $"loudnorm=I={normalize.TargetLufs.ToString("0.###", CultureInfo.InvariantCulture)}:TP=-1.5:LRA=11:print_format=json";
+        var reverbCount = preceding.Count(effect => effect.Enabled && effect is ReverbEffect);
+        var arguments = new List<string> { "-hide_banner", "-nostats", "-i", inputPath };
+        if (reverbCount > 0)
         {
-            "-hide_banner", "-nostats", "-i", inputPath, "-map", "0:a:0",
-            "-af", filter, "-f", "null", "NUL",
-        };
+            for (var index = 0; index < reverbCount; index++) arguments.AddRange(["-i", impulseResponsePath]);
+            var graph = RemixFilterBuilder.BuildGraph(
+                preceding,
+                sampleRate,
+                sourceDurationSeconds,
+                preview: true,
+                Enumerable.Range(1, reverbCount).ToArray());
+            arguments.AddRange([
+                "-filter_complex", graph.Graph + $";[{graph.OutputLabel}]{loudnorm}[analysis]",
+                "-map", "[analysis]", "-f", "null", "NUL",
+            ]);
+        }
+        else
+        {
+            var filter = RemixFilterBuilder.Build(preceding, sampleRate, sourceDurationSeconds, preview: true);
+            if (!string.IsNullOrEmpty(filter)) filter += ",";
+            arguments.AddRange(["-map", "0:a:0", "-af", filter + loudnorm, "-f", "null", "NUL"]);
+        }
         var info = FfmpegProcessRunner.CreateStartInfo(tools.FfmpegPath, arguments, true);
         using var process = Process.Start(info) ?? throw new FfmpegExecutionException("FFmpeg loudness analysis could not start.");
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);

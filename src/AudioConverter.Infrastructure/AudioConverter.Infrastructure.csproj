@@ -10,4 +10,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\remix-hall-ir.wav" LogicalName="AudioConverter.Infrastructure.Assets.remix-hall-ir.wav" />
+  </ItemGroup>
+
 </Project>

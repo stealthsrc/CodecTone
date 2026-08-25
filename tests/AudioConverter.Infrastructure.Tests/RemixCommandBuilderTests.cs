@@ -62,6 +62,24 @@ public sealed class RemixCommandBuilderTests
         StringAssert.StartsWith(filter, "atrim=start=25:end=45,asetpts=PTS-STARTPTS,bass=");
     }
 
+    [TestMethod]
+    public void BuildPreview_AddsImpulseResponseForNaturalReverb()
+    {
+        var args = RemixCommandBuilder.BuildPreview(
+            "in.flac",
+            "preview.wav",
+            [new TempoPitchEffect(0.85), new ReverbEffect(0.28, 2.4)],
+            44_100,
+            120,
+            5,
+            20,
+            "hall-ir.wav");
+
+        AssertArgumentPair(args, "-i", "hall-ir.wav", occurrence: 2);
+        CollectionAssert.Contains(args.ToList(), "-filter_complex");
+        CollectionAssert.Contains(args.ToList(), "[remixout]");
+    }
+
     private static void AssertArgumentPair(string[] args, string name, string expected, int occurrence)
     {
         var found = 0;
