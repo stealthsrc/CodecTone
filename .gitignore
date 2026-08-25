@@ -1,0 +1,31 @@
+# .NET build output
+**/bin/
+**/obj/
+.vs/
+TestResults/
+*.user
+*.suo
+
+# Generated application output
+artifacts/
+release/
+build/
+build-update/
+dist/
+dist-update/
+
+# Local backup and caches
+backup/
+__pycache__/
+*.pyc
+
+# Retained local Python implementation
+audio_converter.py
+audio_converter.spec
+audio_formats.py
+audio_trim.py
+ffmpeg_commands.py
+ffmpeg_installer.py
+ui_theme.py
+windows_drop.py
+tests/test_audio_converter.py
