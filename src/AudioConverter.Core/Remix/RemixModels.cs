@@ -6,6 +6,14 @@ public enum RemixPreset
     BassBoost,
     SlowedReverb,
     SpedUpReverb,
+    Nightcore,
+    DeepBass,
+    VocalBoost,
+    DreamyReverb,
+    LoFi,
+    Club,
+    AcousticWarmth,
+    Telephone,
 }
 
 public enum RemixEffectKind

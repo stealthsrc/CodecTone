@@ -10,6 +10,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
         <converters:TimestampValueConverter x:Key="TimestampConverter" />
+        <Style x:Key="RemixPresetButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="20,12" /><Setter Property="MinHeight" Value="44" /><Setter Property="MinWidth" Value="125" /><Setter Property="Margin" Value="0,0,8,8" /></Style>
     </Window.Resources>
     <Grid Background="{DynamicResource WindowBrush}">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -197,12 +198,20 @@
                         </Grid>
 
                         <TextBlock Text="PRESETS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,9" />
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
-                            <Button Content="BASS BOOST" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Bass Boost" Margin="0,0,8,0" />
-                            <Button Content="SLOWED + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Slowed + Reverb" Margin="0,0,8,0" />
-                            <Button Content="SPED UP + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Sped Up + Reverb" Margin="0,0,8,0" />
-                            <Button Content="RESET / CUSTOM" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Custom" />
-                        </StackPanel>
+                        <WrapPanel Margin="0,0,0,14">
+                            <Button Style="{StaticResource RemixPresetButton}" Content="BASS BOOST" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Bass Boost" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="SLOWED + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Slowed + Reverb" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="SPED UP + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Sped Up + Reverb" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="NIGHTCORE" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Nightcore" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="DEEP BASS" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Deep Bass" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="VOCAL BOOST" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Vocal Boost" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="DREAMY REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Dreamy Reverb" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="LO-FI" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Lo-Fi" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="CLUB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Club" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="ACOUSTIC WARMTH" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Acoustic Warmth" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="TELEPHONE" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Telephone" />
+                            <Button Style="{StaticResource RemixPresetButton}" Content="RESET / CUSTOM" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Custom" />
+                        </WrapPanel>
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>

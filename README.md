@@ -40,7 +40,7 @@ The GUI contains four workspaces:
 - **CONVERT** processes one file or a non-recursive folder batch.
 - **CUT AUDIO** selects a waveform range, applies fades, previews it, and exports it.
 - **COMPRESS AUDIO** uses quality profiles or a total-size budget and scans folders recursively.
-- **REMIX AUDIO** applies presets or an ordered effect rack to one song and edits its metadata.
+- **REMIX AUDIO** applies twelve editable presets or an ordered effect rack to one song and edits its metadata.
 - **ABOUT** explains the local processing pipeline and links to the maintainer profile.
 
 Supported source formats are MP3, FLAC, WAV, OGG, AAC, and M4A. Compression destinations exclude WAV because it generally does not reduce file size.

@@ -419,6 +419,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             "Bass Boost" => RemixPreset.BassBoost,
             "Slowed + Reverb" => RemixPreset.SlowedReverb,
             "Sped Up + Reverb" => RemixPreset.SpedUpReverb,
+            "Nightcore" => RemixPreset.Nightcore,
+            "Deep Bass" => RemixPreset.DeepBass,
+            "Vocal Boost" => RemixPreset.VocalBoost,
+            "Dreamy Reverb" => RemixPreset.DreamyReverb,
+            "Lo-Fi" => RemixPreset.LoFi,
+            "Club" => RemixPreset.Club,
+            "Acoustic Warmth" => RemixPreset.AcousticWarmth,
+            "Telephone" => RemixPreset.Telephone,
             _ => RemixPreset.Custom,
         };
         RemixEffects.Clear();

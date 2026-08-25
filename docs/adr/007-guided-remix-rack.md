@@ -28,7 +28,9 @@ Use a guided rack layout:
 
 1. One source picker and full-width waveform.
 2. A movable 20-second preview selection.
-3. Presets: Bass Boost, Slowed + Reverb, Sped Up + Reverb, and Custom.
+3. Presets: Bass Boost, Slowed + Reverb, Sped Up + Reverb, Nightcore,
+   Deep Bass, Vocal Boost, Dreamy Reverb, Lo-Fi, Club, Acoustic Warmth,
+   Telephone, and Custom.
 4. A 60/40 workspace with the ordered rack and Export/Metadata inspector.
 5. Fixed Preview 20s, Stop, and Export Remix actions.
 

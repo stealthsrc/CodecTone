@@ -36,4 +36,39 @@ public sealed class RemixPresetTests
         Assert.AreEqual(0.18, rack.OfType<ReverbEffect>().Single().Mix);
         Assert.AreEqual(1.6, rack.OfType<ReverbEffect>().Single().DecaySeconds);
     }
+
+    [TestMethod]
+    public void Nightcore_UsesFastTempoAndBrightEq()
+    {
+        var rack = RemixPresetFactory.Create(RemixPreset.Nightcore);
+
+        Assert.AreEqual(1.25, rack.OfType<TempoPitchEffect>().Single().Rate);
+        Assert.AreEqual(3, rack.OfType<EqualizerEffect>().Single().HighGainDb);
+    }
+
+    [TestMethod]
+    public void DeepBass_UsesControlledLowFrequencyBoost()
+    {
+        var rack = RemixPresetFactory.Create(RemixPreset.DeepBass);
+
+        var bass = rack.OfType<BassEffect>().Single();
+        Assert.AreEqual(12, bass.GainDb);
+        Assert.AreEqual(70, bass.FrequencyHz);
+        Assert.IsNotNull(rack.OfType<LoudnessNormalizeEffect>().SingleOrDefault());
+    }
+
+    [DataTestMethod]
+    [DataRow(RemixPreset.VocalBoost)]
+    [DataRow(RemixPreset.DreamyReverb)]
+    [DataRow(RemixPreset.LoFi)]
+    [DataRow(RemixPreset.Club)]
+    [DataRow(RemixPreset.AcousticWarmth)]
+    [DataRow(RemixPreset.Telephone)]
+    public void ExpandedPreset_CreatesValidEditableRack(RemixPreset preset)
+    {
+        var rack = RemixPresetFactory.Create(preset);
+
+        Assert.IsTrue(rack.Count > 0);
+        RemixRackValidator.Validate(rack, 180);
+    }
 }
