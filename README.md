@@ -40,6 +40,7 @@ The GUI contains four workspaces:
 - **CONVERT** processes one file or a non-recursive folder batch.
 - **CUT AUDIO** selects a waveform range, applies fades, previews it, and exports it.
 - **COMPRESS AUDIO** uses quality profiles or a total-size budget and scans folders recursively.
+- **REMIX AUDIO** applies presets or an ordered effect rack to one song and edits its metadata.
 - **ABOUT** explains the local processing pipeline and links to the maintainer profile.
 
 Supported source formats are MP3, FLAC, WAV, OGG, AAC, and M4A. Compression destinations exclude WAV because it generally does not reduce file size.
@@ -116,6 +117,7 @@ dotnet test AudioConverter.sln -c Release
 - Metadata support depends on the source and destination containers.
 - Preview supports Play and Stop, without pause or cursor scrubbing.
 - A running FFmpeg operation cannot currently be cancelled from the GUI.
+- Remix processes one song at a time and does not load VST plugins.
 - Video conversion, web services, cloud storage, and telemetry are not implemented.
 
 ## License

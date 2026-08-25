@@ -26,6 +26,7 @@
             <Button Content="CONVERT" Command="{Binding ShowConvertCommand}" Tag="{Binding ConvertTabState}" Style="{StaticResource TabButton}" Margin="0,0,10,0" />
             <Button Content="CUT AUDIO" Command="{Binding ShowCutCommand}" Tag="{Binding CutTabState}" Style="{StaticResource TabButton}" Margin="0,0,10,0" />
             <Button Content="COMPRESS AUDIO" Command="{Binding ShowCompressCommand}" Tag="{Binding CompressionTabState}" Style="{StaticResource TabButton}" MinWidth="155" />
+            <Button Content="REMIX AUDIO" Command="{Binding ShowRemixCommand}" Tag="{Binding RemixTabState}" Style="{StaticResource TabButton}" MinWidth="140" Margin="10,0,0,0" />
             <Button Content="ABOUT" Command="{Binding ShowAboutCommand}" Tag="{Binding AboutTabState}" Style="{StaticResource TabButton}" MinWidth="110" Margin="10,0,0,0" />
         </StackPanel>
 
@@ -152,10 +153,11 @@
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,30" />
                         <TextBlock Text="WHAT CODECTONE DOES" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,16" />
-                        <UniformGrid Columns="3">
+                        <UniformGrid Columns="4">
                             <StackPanel Margin="0,0,28,0"><TextBlock Text="Convert" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Move between MP3, FLAC, WAV, OGG, AAC and M4A with explicit quality controls." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" /></StackPanel>
                             <StackPanel Margin="0,0,28,0"><TextBlock Text="Cut" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Select an exact waveform range, add fades and preview the result before export." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" /></StackPanel>
-                            <StackPanel><TextBlock Text="Compress" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Reduce file size with quality profiles, target budgets and recursive folder processing." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" /></StackPanel>
+                            <StackPanel Margin="0,0,28,0"><TextBlock Text="Compress" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Reduce file size with quality profiles, target budgets and recursive folder processing." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" /></StackPanel>
+                            <StackPanel><TextBlock Text="Remix" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Build an effect rack, preview twenty seconds, edit metadata and export one transformed song." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" /></StackPanel>
                         </UniformGrid>
 
                         <Separator Background="{DynamicResource BorderBrush}" Margin="0,30" />
@@ -177,6 +179,95 @@
                         <Button Content="VIEW ON GITHUB" Command="{Binding OpenGitHubCommand}" HorizontalAlignment="Left" MinWidth="165" Margin="0,30,0,0" AutomationProperties.Name="Open the Stealthy Labs GitHub profile" />
                     </StackPanel>
                 </Border>
+
+                <Border Visibility="{Binding IsRemixPage, Converter={StaticResource BooleanToVisibility}}" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="24">
+                    <StackPanel>
+                        <TextBlock Text="Remix source · one song" FontWeight="Bold" Margin="0,0,0,10" />
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox Text="{Binding RemixSourcePath}" IsReadOnly="True" />
+                            <Button Grid.Column="1" Content="Choose file" Command="{Binding ChooseRemixFileCommand}" MinWidth="130" Margin="10,0,0,0" />
+                        </Grid>
+                        <TextBlock Text="Drop one supported audio file here. Folder remixing is intentionally disabled." Foreground="{DynamicResource MutedTextBrush}" Margin="2,9,0,18" />
+
+                        <TextBlock Text="20-second preview selection" FontWeight="Bold" Margin="0,0,0,9" />
+                        <controls:WaveformControl Peaks="{Binding RemixWaveformPeaks}" Duration="{Binding RemixDurationSeconds}" Start="{Binding RemixPreviewStartSeconds}" End="{Binding RemixPreviewEndSeconds}" Height="220" />
+                        <Grid Margin="0,10,0,22"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="Preview starts at" Foreground="{DynamicResource MutedTextBrush}" /><TextBox Text="{Binding RemixPreviewStartSeconds, Converter={StaticResource TimestampConverter}, UpdateSourceTrigger=LostFocus}" Margin="0,6,0,0" /></StackPanel>
+                            <StackPanel Grid.Column="1" Margin="14,0,0,0"><TextBlock Text="Estimated remix duration" Foreground="{DynamicResource MutedTextBrush}" /><TextBlock Text="{Binding RemixOutputDuration, Converter={StaticResource TimestampConverter}}" FontSize="16" FontWeight="SemiBold" Margin="0,11,0,0" /></StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="PRESETS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,9" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                            <Button Content="BASS BOOST" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Bass Boost" Margin="0,0,8,0" />
+                            <Button Content="SLOWED + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Slowed + Reverb" Margin="0,0,8,0" />
+                            <Button Content="SPED UP + REVERB" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Sped Up + Reverb" Margin="0,0,8,0" />
+                            <Button Content="RESET / CUSTOM" Command="{Binding ApplyRemixPresetCommand}" CommandParameter="Custom" />
+                        </StackPanel>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="3*" /><ColumnDefinition Width="22" /><ColumnDefinition Width="2*" /></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBlock Text="EFFECT RACK" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding RemixEffectKinds}" SelectedItem="{Binding SelectedRemixEffectKind}" />
+                                    <Button Grid.Column="2" Content="ADD EFFECT" Command="{Binding AddRemixEffectCommand}" Margin="8,0,0,0" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding RemixEffects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource PanelRaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3" Padding="12" Margin="0,0,0,9">
+                                                <StackPanel>
+                                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Content="UP" Command="{Binding DataContext.MoveRemixEffectUpCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Padding="10,5" Margin="4,0" />
+                                                        <Button Grid.Column="2" Content="DOWN" Command="{Binding DataContext.MoveRemixEffectDownCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Padding="10,5" Margin="0,0,4,0" />
+                                                        <Button Grid.Column="3" Content="REMOVE" Command="{Binding DataContext.RemoveRemixEffectCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Padding="10,5" />
+                                                    </Grid>
+                                                    <Grid Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                        <StackPanel Margin="0,0,8,0"><TextBlock Text="{Binding FirstLabel}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /><TextBox Text="{Binding First, UpdateSourceTrigger=PropertyChanged}" Margin="0,5,0,0" /></StackPanel>
+                                                        <StackPanel Grid.Column="1" Margin="0,0,8,0" Visibility="{Binding HasSecond, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="{Binding SecondLabel}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /><TextBox Text="{Binding Second, UpdateSourceTrigger=PropertyChanged}" Margin="0,5,0,0" /></StackPanel>
+                                                        <StackPanel Grid.Column="2" Visibility="{Binding HasThird, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="{Binding ThirdLabel}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" /><TextBox Text="{Binding Third, UpdateSourceTrigger=PropertyChanged}" Margin="0,5,0,0" /></StackPanel>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="Add a preset or effect to begin. Normalize must follow gain effects; fades remain last." Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="2,4,0,0" />
+                            </StackPanel>
+
+                            <Border Grid.Column="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3" Padding="14">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                        <Button Content="EXPORT" Command="{Binding ShowRemixInspectorCommand}" CommandParameter="Export" MinWidth="100" Margin="0,0,8,0" />
+                                        <Button Content="METADATA" Command="{Binding ShowRemixInspectorCommand}" CommandParameter="Metadata" MinWidth="110" />
+                                    </StackPanel>
+
+                                    <StackPanel Visibility="{Binding IsRemixExportTab, Converter={StaticResource BooleanToVisibility}}">
+                                        <TextBlock Text="Output format" /><ComboBox ItemsSource="{Binding Formats}" SelectedItem="{Binding RemixFormat}" Margin="0,6,0,12" />
+                                        <StackPanel Visibility="{Binding IsRemixLossy, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="Audio quality" /><ComboBox ItemsSource="{Binding Bitrates}" SelectedItem="{Binding RemixBitrate}" Margin="0,6,0,12" /></StackPanel>
+                                        <StackPanel Visibility="{Binding IsRemixLossless, Converter={StaticResource BooleanToVisibility}}"><TextBlock Text="Sample rate" /><ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding RemixSampleRateOption}" Margin="0,6,0,12" /><TextBlock Text="Bit depth" /><ComboBox ItemsSource="{Binding BitDepths}" SelectedItem="{Binding RemixBitDepth}" Margin="0,6,0,12" /></StackPanel>
+                                        <TextBlock Text="Output folder" /><Grid Margin="0,6,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBox Text="{Binding RemixOutputFolder}" /><Button Grid.Column="1" Content="Browse" Command="{Binding ChooseRemixOutputCommand}" Margin="6,0,0,0" Padding="12,8" /></Grid>
+                                        <TextBlock Text="File suffix" /><TextBox Text="{Binding RemixSuffix}" Margin="0,6,0,12" />
+                                        <CheckBox Content="Overwrite existing file" IsChecked="{Binding RemixOverwrite}" />
+                                        <TextBlock Text="Export report" FontWeight="SemiBold" Margin="0,16,0,6" /><TextBox Text="{Binding RemixReport, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" />
+                                    </StackPanel>
+
+                                    <StackPanel Visibility="{Binding IsRemixMetadataTab, Converter={StaticResource BooleanToVisibility}}">
+                                        <UniformGrid Columns="2"><StackPanel Margin="0,0,6,8"><TextBlock Text="Title" /><TextBox Text="{Binding RemixTitle}" Margin="0,4,0,0" /></StackPanel><StackPanel Margin="6,0,0,8"><TextBlock Text="Artist" /><TextBox Text="{Binding RemixArtist}" Margin="0,4,0,0" /></StackPanel></UniformGrid>
+                                        <UniformGrid Columns="2"><StackPanel Margin="0,0,6,8"><TextBlock Text="Album" /><TextBox Text="{Binding RemixAlbum}" Margin="0,4,0,0" /></StackPanel><StackPanel Margin="6,0,0,8"><TextBlock Text="Album artist" /><TextBox Text="{Binding RemixAlbumArtist}" Margin="0,4,0,0" /></StackPanel></UniformGrid>
+                                        <UniformGrid Columns="2"><StackPanel Margin="0,0,6,8"><TextBlock Text="Genre" /><TextBox Text="{Binding RemixGenre}" Margin="0,4,0,0" /></StackPanel><StackPanel Margin="6,0,0,8"><TextBlock Text="Date" /><TextBox Text="{Binding RemixDate}" Margin="0,4,0,0" /></StackPanel></UniformGrid>
+                                        <UniformGrid Columns="2"><StackPanel Margin="0,0,6,8"><TextBlock Text="Track" /><TextBox Text="{Binding RemixTrack}" Margin="0,4,0,0" /></StackPanel><StackPanel Margin="6,0,0,8"><TextBlock Text="Disc" /><TextBox Text="{Binding RemixDisc}" Margin="0,4,0,0" /></StackPanel></UniformGrid>
+                                        <TextBlock Text="Comment" /><TextBox Text="{Binding RemixComment}" AcceptsReturn="True" MinHeight="55" Margin="0,4,0,10" />
+                                        <TextBlock Text="Cover art" FontWeight="SemiBold" /><ComboBox ItemsSource="{Binding RemixCoverActions}" SelectedItem="{Binding RemixCoverAction}" Margin="0,6,0,6" /><TextBox Text="{Binding RemixCoverPath}" IsReadOnly="True" Margin="0,0,0,6" /><StackPanel Orientation="Horizontal"><Button Content="REPLACE" Command="{Binding ChooseRemixCoverCommand}" Margin="0,0,6,0" /><Button Content="REMOVE" Command="{Binding RemoveRemixCoverCommand}" /></StackPanel>
+                                        <Grid Margin="0,16,0,8"><TextBlock Text="CUSTOM TAGS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" /><Button Content="ADD TAG" Command="{Binding AddMetadataTagCommand}" HorizontalAlignment="Right" Padding="10,5" /></Grid>
+                                        <ItemsControl ItemsSource="{Binding RemixCustomTags}"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBox Text="{Binding Key}" Margin="0,0,5,0" /><TextBox Grid.Column="1" Text="{Binding Value}" Margin="0,0,5,0" /><Button Grid.Column="2" Content="×" Command="{Binding DataContext.RemoveMetadataTagCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Padding="10,5" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
             </Grid>
         </ScrollViewer>
 
@@ -190,6 +281,9 @@
                     <Button Grid.Column="3" Content="CONVERT AUDIO" Command="{Binding ConvertCommand}" Visibility="{Binding IsConvertPage, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource PrimaryButton}" MinWidth="170" Margin="10,0,0,0" />
                     <Button Grid.Column="3" Content="CUT AUDIO" Command="{Binding CutCommand}" Visibility="{Binding IsCutPage, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource PrimaryButton}" MinWidth="150" Margin="10,0,0,0" />
                     <Button Grid.Column="3" Content="COMPRESS AUDIO" Command="{Binding CompressCommand}" Visibility="{Binding IsCompressionPage, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource PrimaryButton}" MinWidth="180" Margin="10,0,0,0" />
+                    <Button Grid.Column="1" Content="PREVIEW 20S" Command="{Binding PreviewRemixCommand}" Visibility="{Binding IsRemixPage, Converter={StaticResource BooleanToVisibility}}" MinWidth="130" Margin="10,0,0,0" />
+                    <Button Grid.Column="2" Content="STOP" Command="{Binding StopRemixCommand}" Visibility="{Binding IsRemixPage, Converter={StaticResource BooleanToVisibility}}" MinWidth="100" Margin="10,0,0,0" />
+                    <Button Grid.Column="3" Content="EXPORT REMIX" Command="{Binding ExportRemixCommand}" Visibility="{Binding IsRemixPage, Converter={StaticResource BooleanToVisibility}}" Style="{StaticResource PrimaryButton}" MinWidth="170" Margin="10,0,0,0" />
                 </Grid>
             </Grid>
         </Border>

@@ -19,6 +19,17 @@ public sealed class DialogService
         return dialog.ShowDialog() == true ? dialog.FolderName : null;
     }
 
+    public string? ChooseCoverImage()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "Cover images|*.png;*.jpg;*.jpeg;*.webp|All files|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
     public void Error(string message) => MessageBox.Show(message, "CodecTone", MessageBoxButton.OK, MessageBoxImage.Error);
 
     public bool Confirm(string message) => MessageBox.Show(

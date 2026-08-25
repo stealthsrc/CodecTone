@@ -7,12 +7,15 @@ using AudioConverter.Core.Compression;
 using AudioConverter.Core.Models;
 using AudioConverter.Core.Paths;
 using AudioConverter.Core.Progress;
+using AudioConverter.Core.Remix;
+using AudioConverter.Core.Validation;
 using AudioConverter.Desktop.Mvvm;
 using AudioConverter.Desktop.Services;
 using AudioConverter.Infrastructure.Audio;
 using AudioConverter.Infrastructure.Ffmpeg;
 using AudioConverter.Infrastructure.Storage;
 using AudioConverter.Infrastructure.Shell;
+using AudioConverter.Infrastructure.Remix;
 
 namespace AudioConverter.Desktop.ViewModels;
 
@@ -25,6 +28,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private FfmpegTools? tools;
     private AudioProcessingService? audio;
     private FfprobeService? probe;
+    private RemixProcessingService? remix;
     private string activeWorkspace = "Convert";
     private bool isBusy;
     private bool ffmpegMissing;
@@ -65,6 +69,34 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool compressionOverwrite;
     private string compressionEstimate = "Choose a source, then analyze it to estimate the output size.";
     private string compressionReport = "No compression has run yet.";
+    private string remixSourcePath = "";
+    private double remixDurationSeconds;
+    private int remixSampleRate = 44_100;
+    private bool remixSourceHasCover;
+    private double[] remixWaveformPeaks = [];
+    private double remixPreviewStartSeconds;
+    private AudioFormat remixFormat = AudioFormat.Mp3;
+    private string remixBitrate = "192k";
+    private string remixSampleRateOption = "Auto";
+    private string remixBitDepth = "Auto";
+    private string remixOutputFolder = "";
+    private string remixSuffix = "_remix";
+    private bool remixOverwrite;
+    private RemixEffectKind selectedRemixEffectKind = RemixEffectKind.Bass;
+    private string remixInspectorTab = "Export";
+    private bool remixRackDirty;
+    private string remixTitle = "";
+    private string remixArtist = "";
+    private string remixAlbum = "";
+    private string remixAlbumArtist = "";
+    private string remixGenre = "";
+    private string remixDate = "";
+    private string remixTrack = "";
+    private string remixDisc = "";
+    private string remixComment = "";
+    private string remixCoverAction = "Keep";
+    private string remixCoverPath = "";
+    private string remixReport = "No remix has been exported yet.";
 
     public MainViewModel(DialogService dialogs)
     {
@@ -73,6 +105,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ShowCutCommand = new RelayCommand(() => SetWorkspace("Cut"));
         ShowCompressCommand = new RelayCommand(() => SetWorkspace("Compress"));
         ShowAboutCommand = new RelayCommand(() => SetWorkspace("About"));
+        ShowRemixCommand = new RelayCommand(() => SetWorkspace("Remix"));
         ToggleThemeCommand = new AsyncRelayCommand(ToggleThemeAsync);
         ChooseFileCommand = new RelayCommand(ChooseFile);
         ChooseFolderCommand = new RelayCommand(ChooseFolder);
@@ -90,6 +123,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         AnalyzeCompressionCommand = new AsyncRelayCommand(AnalyzeCompressionAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(CompressionSourcePath));
         CompressCommand = new AsyncRelayCommand(CompressAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(CompressionSourcePath));
         OpenGitHubCommand = new RelayCommand(OpenGitHub);
+        ChooseRemixFileCommand = new AsyncRelayCommand(ChooseRemixFileAsync, () => !IsBusy);
+        ApplyRemixPresetCommand = new RelayCommand<string>(ApplyRemixPreset);
+        AddRemixEffectCommand = new RelayCommand(AddRemixEffect);
+        RemoveRemixEffectCommand = new RelayCommand<RemixEffectViewModel>(RemoveRemixEffect);
+        MoveRemixEffectUpCommand = new RelayCommand<RemixEffectViewModel>(effect => MoveRemixEffect(effect, -1));
+        MoveRemixEffectDownCommand = new RelayCommand<RemixEffectViewModel>(effect => MoveRemixEffect(effect, 1));
+        ShowRemixInspectorCommand = new RelayCommand<string>(tab => RemixInspectorTab = tab);
+        ChooseRemixOutputCommand = new RelayCommand(() => RemixOutputFolder = dialogs.ChooseFolder(RemixOutputFolder) ?? RemixOutputFolder);
+        ChooseRemixCoverCommand = new RelayCommand(ChooseRemixCover);
+        RemoveRemixCoverCommand = new RelayCommand(() => { RemixCoverAction = "Remove"; RemixCoverPath = ""; });
+        AddMetadataTagCommand = new RelayCommand(() => RemixCustomTags.Add(new MetadataTagViewModel()));
+        RemoveMetadataTagCommand = new RelayCommand<MetadataTagViewModel>(tag => RemixCustomTags.Remove(tag));
+        PreviewRemixCommand = new AsyncRelayCommand(PreviewRemixAsync, () => !IsBusy && RemixDurationSeconds > 0);
+        StopRemixCommand = new RelayCommand(() => { previewPlayer.Stop(); Status = "Remix preview stopped."; });
+        ExportRemixCommand = new AsyncRelayCommand(ExportRemixAsync, () => !IsBusy && RemixDurationSeconds > 0);
     }
 
     public IReadOnlyList<AudioFormat> Formats => AudioFormats.All;
@@ -100,11 +148,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsCutPage => activeWorkspace == "Cut";
     public bool IsCompressionPage => activeWorkspace == "Compress";
     public bool IsAboutPage => activeWorkspace == "About";
+    public bool IsRemixPage => activeWorkspace == "Remix";
     public bool IsToolWorkspace => !IsAboutPage;
     public string ConvertTabState => IsConvertPage ? "Active" : "Inactive";
     public string CutTabState => IsCutPage ? "Active" : "Inactive";
     public string CompressionTabState => IsCompressionPage ? "Active" : "Inactive";
     public string AboutTabState => IsAboutPage ? "Active" : "Inactive";
+    public string RemixTabState => IsRemixPage ? "Active" : "Inactive";
     public string ProductVersion => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "2.0.0";
     public bool IsBusy { get => isBusy; private set { if (Set(ref isBusy, value)) RaiseCommands(); } }
     public bool FfmpegMissing { get => ffmpegMissing; private set => Set(ref ffmpegMissing, value); }
@@ -164,11 +214,56 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool CompressionOverwrite { get => compressionOverwrite; set => Set(ref compressionOverwrite, value); }
     public string CompressionEstimate { get => compressionEstimate; private set => Set(ref compressionEstimate, value); }
     public string CompressionReport { get => compressionReport; private set => Set(ref compressionReport, value); }
+    public ObservableCollection<RemixEffectViewModel> RemixEffects { get; } = [];
+    public ObservableCollection<MetadataTagViewModel> RemixCustomTags { get; } = [];
+    public IReadOnlyList<RemixEffectKind> RemixEffectKinds { get; } = Enum.GetValues<RemixEffectKind>();
+    public IReadOnlyList<string> RemixInspectorTabs { get; } = ["Export", "Metadata"];
+    public IReadOnlyList<string> RemixCoverActions { get; } = ["Keep", "Replace", "Remove"];
+    public string RemixSourcePath { get => remixSourcePath; set { if (Set(ref remixSourcePath, value)) RaiseCommands(); } }
+    public double RemixDurationSeconds { get => remixDurationSeconds; private set { if (Set(ref remixDurationSeconds, value)) { Raise(nameof(RemixOutputDuration)); RaiseCommands(); } } }
+    public double RemixOutputDuration
+    {
+        get
+        {
+            if (RemixDurationSeconds <= 0) return 0;
+            var rate = BuildRemixRack().OfType<TempoPitchEffect>().FirstOrDefault(effect => effect.Enabled)?.Rate ?? 1;
+            return double.IsFinite(rate) && rate > 0 ? RemixDurationSeconds / rate : RemixDurationSeconds;
+        }
+    }
+    public double[] RemixWaveformPeaks { get => remixWaveformPeaks; private set => Set(ref remixWaveformPeaks, value); }
+    public double RemixPreviewStartSeconds { get => remixPreviewStartSeconds; set { if (Set(ref remixPreviewStartSeconds, Math.Clamp(value, 0, Math.Max(0, RemixDurationSeconds - 1)))) Raise(nameof(RemixPreviewEndSeconds)); } }
+    public double RemixPreviewEndSeconds { get => Math.Min(RemixDurationSeconds, RemixPreviewStartSeconds + 20); set => RemixPreviewStartSeconds = Math.Max(0, value - 20); }
+    public AudioFormat RemixFormat { get => remixFormat; set { if (Set(ref remixFormat, value)) { Raise(nameof(IsRemixLossy)); Raise(nameof(IsRemixLossless)); } } }
+    public bool IsRemixLossy => RemixFormat.IsLossy();
+    public bool IsRemixLossless => !IsRemixLossy;
+    public string RemixBitrate { get => remixBitrate; set => Set(ref remixBitrate, value); }
+    public string RemixSampleRateOption { get => remixSampleRateOption; set => Set(ref remixSampleRateOption, value); }
+    public string RemixBitDepth { get => remixBitDepth; set => Set(ref remixBitDepth, value); }
+    public string RemixOutputFolder { get => remixOutputFolder; set => Set(ref remixOutputFolder, value); }
+    public string RemixSuffix { get => remixSuffix; set => Set(ref remixSuffix, value); }
+    public bool RemixOverwrite { get => remixOverwrite; set => Set(ref remixOverwrite, value); }
+    public RemixEffectKind SelectedRemixEffectKind { get => selectedRemixEffectKind; set => Set(ref selectedRemixEffectKind, value); }
+    public string RemixInspectorTab { get => remixInspectorTab; set { if (Set(ref remixInspectorTab, value)) { Raise(nameof(IsRemixExportTab)); Raise(nameof(IsRemixMetadataTab)); } } }
+    public bool IsRemixExportTab => RemixInspectorTab == "Export";
+    public bool IsRemixMetadataTab => RemixInspectorTab == "Metadata";
+    public string RemixTitle { get => remixTitle; set => Set(ref remixTitle, value); }
+    public string RemixArtist { get => remixArtist; set => Set(ref remixArtist, value); }
+    public string RemixAlbum { get => remixAlbum; set => Set(ref remixAlbum, value); }
+    public string RemixAlbumArtist { get => remixAlbumArtist; set => Set(ref remixAlbumArtist, value); }
+    public string RemixGenre { get => remixGenre; set => Set(ref remixGenre, value); }
+    public string RemixDate { get => remixDate; set => Set(ref remixDate, value); }
+    public string RemixTrack { get => remixTrack; set => Set(ref remixTrack, value); }
+    public string RemixDisc { get => remixDisc; set => Set(ref remixDisc, value); }
+    public string RemixComment { get => remixComment; set => Set(ref remixComment, value); }
+    public string RemixCoverAction { get => remixCoverAction; set => Set(ref remixCoverAction, value); }
+    public string RemixCoverPath { get => remixCoverPath; set => Set(ref remixCoverPath, value); }
+    public string RemixReport { get => remixReport; private set => Set(ref remixReport, value); }
 
     public RelayCommand ShowConvertCommand { get; }
     public RelayCommand ShowCutCommand { get; }
     public RelayCommand ShowCompressCommand { get; }
     public RelayCommand ShowAboutCommand { get; }
+    public RelayCommand ShowRemixCommand { get; }
     public AsyncRelayCommand ToggleThemeCommand { get; }
     public RelayCommand ChooseFileCommand { get; }
     public RelayCommand ChooseFolderCommand { get; }
@@ -186,6 +281,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand AnalyzeCompressionCommand { get; }
     public AsyncRelayCommand CompressCommand { get; }
     public RelayCommand OpenGitHubCommand { get; }
+    public AsyncRelayCommand ChooseRemixFileCommand { get; }
+    public RelayCommand<string> ApplyRemixPresetCommand { get; }
+    public RelayCommand AddRemixEffectCommand { get; }
+    public RelayCommand<RemixEffectViewModel> RemoveRemixEffectCommand { get; }
+    public RelayCommand<RemixEffectViewModel> MoveRemixEffectUpCommand { get; }
+    public RelayCommand<RemixEffectViewModel> MoveRemixEffectDownCommand { get; }
+    public RelayCommand<string> ShowRemixInspectorCommand { get; }
+    public RelayCommand ChooseRemixOutputCommand { get; }
+    public RelayCommand ChooseRemixCoverCommand { get; }
+    public RelayCommand RemoveRemixCoverCommand { get; }
+    public RelayCommand AddMetadataTagCommand { get; }
+    public RelayCommand<MetadataTagViewModel> RemoveMetadataTagCommand { get; }
+    public AsyncRelayCommand PreviewRemixCommand { get; }
+    public RelayCommand StopRemixCommand { get; }
+    public AsyncRelayCommand ExportRemixCommand { get; }
 
     public async Task InitializeAsync()
     {
@@ -205,6 +315,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             CompressionSourcePath = path;
             await AnalyzeCompressionAsync();
         }
+        else if (IsRemixPage && File.Exists(path)) await LoadRemixSourceAsync(path);
     }
 
     private void SetWorkspace(string workspace)
@@ -214,11 +325,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(IsCutPage));
         Raise(nameof(IsCompressionPage));
         Raise(nameof(IsAboutPage));
+        Raise(nameof(IsRemixPage));
         Raise(nameof(IsToolWorkspace));
         Raise(nameof(ConvertTabState));
         Raise(nameof(CutTabState));
         Raise(nameof(CompressionTabState));
         Raise(nameof(AboutTabState));
+        Raise(nameof(RemixTabState));
     }
 
     private void OpenGitHub()
@@ -231,7 +344,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            tools = FfmpegLocator.Find(); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath);
+            tools = FfmpegLocator.Find(); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools);
             FfmpegMissing = false; Status = "FFmpeg ready. All processing stays local.";
         }
         catch (FfmpegDependencyException error)
@@ -246,7 +359,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             var installer = new FfmpegInstaller();
             var installProgress = new Progress<(double Fraction, string Status)>(item => UpdateOperationProgress(item.Fraction, item.Status));
-            tools = await installer.InstallAsync(progress: installProgress); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); FfmpegMissing = false;
+            tools = await installer.InstallAsync(progress: installProgress); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools); FfmpegMissing = false;
         });
     }
 
@@ -267,6 +380,207 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (path is null) return;
         CompressionSourcePath = path;
         await AnalyzeCompressionAsync();
+    }
+
+    private async Task ChooseRemixFileAsync()
+    {
+        var path = dialogs.ChooseAudioFile();
+        if (path is not null) await LoadRemixSourceAsync(path);
+    }
+
+    private async Task LoadRemixSourceAsync(string path)
+    {
+        await RunBusyAsync(async () =>
+        {
+            EnsureFfmpeg();
+            _ = AudioFormats.FromPath(path);
+            Status = "Reading remix source and waveform…";
+            var info = await probe!.ProbeAsync(path);
+            var peaks = await audio!.ExtractWaveformAsync(path, 900);
+            RemixSourcePath = path;
+            RemixDurationSeconds = info.DurationSeconds;
+            remixSampleRate = info.SampleRate ?? 44_100;
+            remixSourceHasCover = info.HasCoverArt;
+            RemixWaveformPeaks = peaks;
+            RemixPreviewStartSeconds = 0;
+            RemixFormat = AudioFormats.FromPath(path);
+            RemixOutputFolder = Path.GetDirectoryName(path) ?? "";
+            LoadRemixMetadata(info.Tags);
+            UpdateOperationProgress(1, $"Remix source ready: {Path.GetFileName(path)}");
+        });
+    }
+
+    private void ApplyRemixPreset(string presetName)
+    {
+        if (remixRackDirty && RemixEffects.Count > 0
+            && !dialogs.Confirm("Applying a preset will replace the current effect rack. Continue?")) return;
+        var preset = presetName switch
+        {
+            "Bass Boost" => RemixPreset.BassBoost,
+            "Slowed + Reverb" => RemixPreset.SlowedReverb,
+            "Sped Up + Reverb" => RemixPreset.SpedUpReverb,
+            _ => RemixPreset.Custom,
+        };
+        RemixEffects.Clear();
+        foreach (var effect in RemixPresetFactory.Create(preset))
+            RemixEffects.Add(RemixEffectViewModel.From(effect, OnRemixRackChanged));
+        remixRackDirty = false;
+        Raise(nameof(RemixOutputDuration));
+    }
+
+    private void AddRemixEffect()
+    {
+        if (RemixEffects.Count >= 16) { dialogs.Error("A remix rack supports at most 16 effects."); return; }
+        if (SelectedRemixEffectKind is RemixEffectKind.TempoPitch or RemixEffectKind.LoudnessNormalize or RemixEffectKind.FadeIn or RemixEffectKind.FadeOut
+            && RemixEffects.Any(effect => effect.Kind == SelectedRemixEffectKind))
+        {
+            dialogs.Error($"{SelectedRemixEffectKind} can appear only once.");
+            return;
+        }
+        var viewModel = new RemixEffectViewModel(SelectedRemixEffectKind, OnRemixRackChanged);
+        var firstFade = RemixEffects.ToList().FindIndex(effect => effect.Kind is RemixEffectKind.FadeIn or RemixEffectKind.FadeOut);
+        if (SelectedRemixEffectKind is RemixEffectKind.FadeIn or RemixEffectKind.FadeOut || firstFade < 0)
+            RemixEffects.Add(viewModel);
+        else
+            RemixEffects.Insert(firstFade, viewModel);
+        OnRemixRackChanged();
+    }
+
+    private void RemoveRemixEffect(RemixEffectViewModel effect)
+    {
+        RemixEffects.Remove(effect);
+        OnRemixRackChanged();
+    }
+
+    private void MoveRemixEffect(RemixEffectViewModel effect, int offset)
+    {
+        var index = RemixEffects.IndexOf(effect);
+        var destination = index + offset;
+        if (index < 0 || destination < 0 || destination >= RemixEffects.Count) return;
+        RemixEffects.Move(index, destination);
+        OnRemixRackChanged();
+    }
+
+    private void OnRemixRackChanged()
+    {
+        remixRackDirty = true;
+        Raise(nameof(RemixOutputDuration));
+    }
+
+    private async Task PreviewRemixAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            var rack = BuildRemixRack();
+            RemixRackValidator.Validate(rack, RemixDurationSeconds);
+            previewPlayer.Stop();
+            var progress = new Progress<double>(fraction => UpdateOperationProgress(fraction, "Rendering 20-second remix preview…"));
+            var output = await remix!.RenderPreviewAsync(
+                RemixSourcePath,
+                rack,
+                remixSampleRate,
+                RemixDurationSeconds,
+                RemixPreviewStartSeconds,
+                progress);
+            previewPlayer.Play(output);
+            UpdateOperationProgress(1, "Playing remix preview.");
+        });
+    }
+
+    private async Task ExportRemixAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            var rack = BuildRemixRack();
+            RemixRackValidator.Validate(rack, RemixDurationSeconds);
+            var metadata = BuildRemixMetadata();
+            RemixMetadataValidator.Validate(metadata);
+            var hasRequestedCover = metadata.CoverAction == CoverArtAction.Replace
+                || metadata.CoverAction == CoverArtAction.Keep && remixSourceHasCover;
+            if (hasRequestedCover
+                && RemixFormat is not (AudioFormat.Mp3 or AudioFormat.M4a or AudioFormat.Flac)
+                && !dialogs.Confirm("The selected output format does not support embedded cover art here. Export without the cover?"))
+            {
+                Status = "Remix export cancelled.";
+                TimingText = "";
+                return;
+            }
+
+            var directory = string.IsNullOrWhiteSpace(RemixOutputFolder)
+                ? Path.GetDirectoryName(RemixSourcePath)!
+                : RemixOutputFolder;
+            var output = OutputPathBuilder.Build(RemixSourcePath, directory, RemixFormat, RemixSuffix);
+            var encoding = CreateRemixEncoding();
+            var progress = new Progress<double>(fraction => UpdateOperationProgress(fraction, "Exporting remix…"));
+            await remix!.ExportAsync(
+                RemixSourcePath,
+                output,
+                rack,
+                encoding,
+                metadata,
+                remixSampleRate,
+                RemixDurationSeconds,
+                remixSourceHasCover,
+                progress);
+            RemixReport = $"Export completed\nSource: {RemixSourcePath}\nOutput: {output}\nEffects: {rack.Count(effect => effect.Enabled)}\nDuration: {TimestampParser.Format(RemixOutputDuration)}";
+            UpdateOperationProgress(1, $"Remix exported: {Path.GetFileName(output)}");
+        });
+    }
+
+    private IReadOnlyList<RemixEffect> BuildRemixRack() => RemixEffects.Select(effect => effect.ToModel()).ToArray();
+
+    private ConversionOptions CreateRemixEncoding() => new(
+        RemixFormat,
+        RemixFormat.IsLossy() ? RemixBitrate : null,
+        RemixFormat.IsLossy() ? null : ParseOptionalInt(RemixSampleRateOption),
+        RemixFormat.IsLossy() ? null : ParseOptionalInt(RemixBitDepth),
+        PreserveMetadata: true,
+        Overwrite: RemixOverwrite);
+
+    private RemixMetadata BuildRemixMetadata()
+    {
+        var custom = RemixCustomTags.ToDictionary(tag => tag.Key, tag => tag.Value, StringComparer.OrdinalIgnoreCase);
+        return new RemixMetadata(
+            RemixTitle,
+            RemixArtist,
+            RemixAlbum,
+            RemixAlbumArtist,
+            RemixGenre,
+            RemixDate,
+            RemixTrack,
+            RemixDisc,
+            RemixComment,
+            custom,
+            Enum.Parse<CoverArtAction>(RemixCoverAction),
+            string.IsNullOrWhiteSpace(RemixCoverPath) ? null : RemixCoverPath);
+    }
+
+    private void LoadRemixMetadata(IReadOnlyDictionary<string, string> tags)
+    {
+        string Get(params string[] keys) => keys.Select(key => tags.TryGetValue(key, out var value) ? value : null).FirstOrDefault(value => value is not null) ?? "";
+        RemixTitle = Get("title");
+        RemixArtist = Get("artist");
+        RemixAlbum = Get("album");
+        RemixAlbumArtist = Get("album_artist", "albumartist");
+        RemixGenre = Get("genre");
+        RemixDate = Get("date", "year");
+        RemixTrack = Get("track");
+        RemixDisc = Get("disc");
+        RemixComment = Get("comment", "description");
+        RemixCoverAction = "Keep";
+        RemixCoverPath = "";
+        var standard = new HashSet<string>(["title", "artist", "album", "album_artist", "albumartist", "genre", "date", "year", "track", "disc", "comment", "description"], StringComparer.OrdinalIgnoreCase);
+        RemixCustomTags.Clear();
+        foreach (var pair in tags.Where(pair => !standard.Contains(pair.Key)))
+            RemixCustomTags.Add(new MetadataTagViewModel { Key = pair.Key, Value = pair.Value });
+    }
+
+    private void ChooseRemixCover()
+    {
+        var path = dialogs.ChooseCoverImage();
+        if (path is null) return;
+        RemixCoverPath = path;
+        RemixCoverAction = "Replace";
     }
 
     private async Task ConvertAsync()
@@ -554,7 +868,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private static int? ParseOptionalInt(string value) => int.TryParse(value, out var result) ? result : null;
     private static string ResolveOutputDirectory(string source, string configured) => string.IsNullOrWhiteSpace(configured) ? Path.Combine(Path.GetDirectoryName(source)!, "converted") : configured;
     private static IEnumerable<string> EnumerateSources(string source) => File.Exists(source) ? [source] : Directory.Exists(source) ? Directory.EnumerateFiles(source).Where(path => { try { _ = AudioFormats.FromPath(path); return true; } catch { return false; } }) : [];
-    private void EnsureFfmpeg() { if (tools is null || audio is null || probe is null) throw new FfmpegDependencyException("FFmpeg is required. Install it from this application first."); }
+    private void EnsureFfmpeg() { if (tools is null || audio is null || probe is null || remix is null) throw new FfmpegDependencyException("FFmpeg is required. Install it from this application first."); }
 
     private async Task RunBusyAsync(Func<Task> action)
     {
@@ -614,6 +928,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Theme = Theme.Equals("Oled", StringComparison.OrdinalIgnoreCase) ? "White" : "Oled"; ThemeService.Apply(Theme); await settingsStore.SaveAsync(new AppSettings(Theme, OutputFolder));
     }
 
-    private void RaiseCommands() { ConvertCommand.RaiseCanExecuteChanged(); CutCommand.RaiseCanExecuteChanged(); PreviewCommand.RaiseCanExecuteChanged(); InstallFfmpegCommand.RaiseCanExecuteChanged(); ChooseCutFileCommand.RaiseCanExecuteChanged(); ChooseCompressionFileCommand.RaiseCanExecuteChanged(); AnalyzeCompressionCommand.RaiseCanExecuteChanged(); CompressCommand.RaiseCanExecuteChanged(); }
-    public void Dispose() => previewPlayer.Dispose();
+    private void RaiseCommands() { ConvertCommand.RaiseCanExecuteChanged(); CutCommand.RaiseCanExecuteChanged(); PreviewCommand.RaiseCanExecuteChanged(); InstallFfmpegCommand.RaiseCanExecuteChanged(); ChooseCutFileCommand.RaiseCanExecuteChanged(); ChooseCompressionFileCommand.RaiseCanExecuteChanged(); AnalyzeCompressionCommand.RaiseCanExecuteChanged(); CompressCommand.RaiseCanExecuteChanged(); ChooseRemixFileCommand.RaiseCanExecuteChanged(); PreviewRemixCommand.RaiseCanExecuteChanged(); ExportRemixCommand.RaiseCanExecuteChanged(); }
+    public void Dispose()
+    {
+        previewPlayer.Dispose();
+        remix?.CleanupTemporaryFiles();
+    }
 }
