@@ -32,4 +32,35 @@ public sealed class FfprobeParserTests
         Assert.ThrowsException<InvalidDataException>(() =>
             FfprobeParser.Parse("{\"streams\":[{\"codec_type\":\"video\"}],\"format\":{}}"));
     }
+
+    [TestMethod]
+    public void Parse_ReportsEmbeddedArtworkStreamsAndFrontCoverTag()
+    {
+        const string json = """
+        {
+          "streams": [
+            {"index":0,"codec_type":"audio","codec_name":"flac"},
+            {"index":1,"codec_type":"video","codec_name":"png","width":600,"height":600,"disposition":{"attached_pic":1},"tags":{"comment":"Cover (back)"}},
+            {"index":2,"codec_type":"video","codec_name":"mjpeg","width":1200,"height":1200,"disposition":{"attached_pic":1},"tags":{"comment":"Cover (front)"}}
+          ],
+          "format":{"duration":"10","tags":{"artist":"Artist","album":"Album"}}
+        }
+        """;
+
+        var result = FfprobeParser.Parse(json);
+
+        Assert.AreEqual(2, result.ArtworkStreams.Count);
+        Assert.IsTrue(result.ArtworkStreams.Single(stream => stream.StreamIndex == 2).IsFrontCover);
+        Assert.AreEqual(1200, result.ArtworkStreams.Single(stream => stream.StreamIndex == 2).Width);
+    }
+
+    [TestMethod]
+    public void Parse_DoesNotTreatRegularVideoAsAlbumArtwork()
+    {
+        const string json = """
+        {"streams":[{"index":0,"codec_type":"audio","codec_name":"aac"},{"index":1,"codec_type":"video","codec_name":"h264","width":1920,"height":1080,"disposition":{"attached_pic":0}}],"format":{"duration":"10"}}
+        """;
+
+        Assert.AreEqual(0, FfprobeParser.Parse(json).ArtworkStreams.Count);
+    }
 }

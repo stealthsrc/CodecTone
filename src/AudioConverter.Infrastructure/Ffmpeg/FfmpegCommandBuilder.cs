@@ -140,11 +140,10 @@ public static class FfmpegCommandBuilder
     {
         if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         if (!double.IsFinite(durationSeconds) || durationSeconds <= 0) throw new ArgumentOutOfRangeException(nameof(durationSeconds));
-        var sampleRate = (int)Math.Clamp(Math.Ceiling(width * 4d / durationSeconds), 10, 1000);
         return
     [
         "-hide_banner", "-loglevel", "error", "-i", inputPath, "-map", "0:a:0",
-        "-vn", "-ac", "1", "-ar", sampleRate.ToString(CultureInfo.InvariantCulture), "-f", "s16le", "pipe:1",
+        "-vn", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1",
     ];
     }
 

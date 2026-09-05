@@ -77,12 +77,25 @@ public static class RemixRackValidator
             case HighPassEffect value: Require(value.FrequencyHz, 20, 500, "High-pass frequency"); break;
             case LowPassEffect value: Require(value.FrequencyHz, 1_000, 20_000, "Low-pass frequency"); break;
             case SoftLimiterEffect value: Require(value.CeilingDb, -6, -0.1, "Limiter ceiling"); break;
+            case DistortionEffect value:
+                Require(value.DriveDb, 0, 36, "Distortion drive");
+                Require(value.Threshold, 0.0001, 1, "Distortion threshold");
+                Require(value.Oversample, 1, 16, "Distortion oversample");
+                if (value.Oversample != Math.Truncate(value.Oversample))
+                    throw new ArgumentException("Distortion oversample must be an integer.");
+                break;
+            case BitCrusherEffect value:
+                Require(value.Bits, 1, 24, "Bit Crusher bits");
+                Require(value.Samples, 1, 250, "Bit Crusher samples");
+                Require(value.Mix, 0, 1, "Bit Crusher mix");
+                break;
         }
     }
 
     private static bool IsGainOrToneEffect(RemixEffect effect) =>
         effect is BassEffect or EqualizerEffect or ReverbEffect or EchoEffect or VolumeEffect
-            or CompressorEffect or StereoWidthEffect or HighPassEffect or LowPassEffect;
+            or CompressorEffect or StereoWidthEffect or HighPassEffect or LowPassEffect
+            or DistortionEffect or BitCrusherEffect;
 
     private static void RejectDuplicate<T>(IEnumerable<RemixEffect> effects, string name)
         where T : RemixEffect

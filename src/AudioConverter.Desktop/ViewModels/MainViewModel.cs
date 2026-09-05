@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using AudioConverter.Core.Compression;
+using AudioConverter.Core.Artwork;
 using AudioConverter.Core.Models;
 using AudioConverter.Core.Paths;
 using AudioConverter.Core.Progress;
@@ -16,19 +17,31 @@ using AudioConverter.Infrastructure.Ffmpeg;
 using AudioConverter.Infrastructure.Storage;
 using AudioConverter.Infrastructure.Shell;
 using AudioConverter.Infrastructure.Remix;
+using AudioConverter.Infrastructure.Artwork;
 
 namespace AudioConverter.Desktop.ViewModels;
 
 public sealed class MainViewModel : ObservableObject, IDisposable
 {
-    private readonly DialogService dialogs;
+    private readonly IDialogService dialogs;
     private readonly JsonSettingsStore settingsStore = new();
     private readonly WavePreviewPlayer previewPlayer = new();
+    private readonly LocalDiagnosticLog diagnosticLog = new();
+    private TaskCompletionSource? operationFinished;
+    private readonly HashSet<Task> analysisTasks = [];
+    private bool closing;
+    private string operationWorkspace = "Convert";
+    private double previewVolume = 25;
+    private ArtworkPlannedAlbum? selectedArtworkAlbum;
+    private System.Windows.Media.Imaging.BitmapImage? artworkPreview;
+    private string artworkPreviewInfo = "Select an album and preview its cover.";
+    private readonly string artworkPreviewDirectory = Path.Combine(AppPaths.Root, "artwork-preview", Guid.NewGuid().ToString("N"));
     private readonly Stopwatch operationTimer = new();
     private FfmpegTools? tools;
     private AudioProcessingService? audio;
     private FfprobeService? probe;
     private RemixProcessingService? remix;
+    private ArtworkExtractionService? artworkExtractor;
     private AdaptiveAudioAnalyzer? remixAnalyzer;
     private CancellationTokenSource? remixAnalysisCancellation;
     private CancellationTokenSource? activeOperationCancellation;
@@ -74,6 +87,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool compressionOverwrite;
     private string compressionEstimate = "Choose a source, then analyze it to estimate the output size.";
     private string compressionReport = "No compression has run yet.";
+    private string artworkSourcePath = "";
+    private string artworkOutputFolder = "";
+    private ArtworkOutputFormat artworkOutputFormat = ArtworkOutputFormat.Original;
+    private bool artworkLimitDimensions;
+    private string artworkMaximumDimension = "1200";
+    private string artworkEstimate = "Choose a source, then analyze it to find embedded album artwork.";
+    private string artworkReport = "No artwork extraction has run yet.";
     private string remixSourcePath = "";
     private double remixDurationSeconds;
     private int remixSampleRate = 44_100;
@@ -108,12 +128,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string remixAnalysisStatus = "Choose a song to enable adaptive presets.";
     private string remixAdaptiveExplanation = "Presets use safe static defaults until a song is analyzed.";
 
-    public MainViewModel(DialogService dialogs)
+    public MainViewModel(IDialogService dialogs)
     {
         this.dialogs = dialogs;
         ShowConvertCommand = new RelayCommand(() => SetWorkspace("Convert"));
         ShowCutCommand = new RelayCommand(() => SetWorkspace("Cut"));
         ShowCompressCommand = new RelayCommand(() => SetWorkspace("Compress"));
+        ShowArtworkCommand = new RelayCommand(() => SetWorkspace("Artwork"));
         ShowAboutCommand = new RelayCommand(() => SetWorkspace("About"));
         ShowRemixCommand = new RelayCommand(() => SetWorkspace("Remix"));
         ToggleThemeCommand = new AsyncRelayCommand(ToggleThemeAsync);
@@ -132,6 +153,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ChooseCompressionOutputCommand = new RelayCommand(() => CompressionOutputFolder = dialogs.ChooseFolder(CompressionOutputFolder) ?? CompressionOutputFolder);
         AnalyzeCompressionCommand = new AsyncRelayCommand(AnalyzeCompressionAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(CompressionSourcePath));
         CompressCommand = new AsyncRelayCommand(CompressAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(CompressionSourcePath));
+        ChooseArtworkFileCommand = new AsyncRelayCommand(ChooseArtworkFileAsync, () => !IsBusy);
+        ChooseArtworkFolderCommand = new AsyncRelayCommand(ChooseArtworkFolderAsync, () => !IsBusy);
+        ChooseArtworkOutputCommand = new RelayCommand(() => ArtworkOutputFolder = dialogs.ChooseFolder(ArtworkOutputFolder) ?? ArtworkOutputFolder);
+        AnalyzeArtworkCommand = new AsyncRelayCommand(AnalyzeArtworkAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(ArtworkSourcePath));
+        ExtractArtworkCommand = new AsyncRelayCommand(ExtractArtworkAsync, () => !IsBusy && !string.IsNullOrWhiteSpace(ArtworkSourcePath));
         OpenGitHubCommand = new RelayCommand(OpenGitHub);
         ChooseRemixFileCommand = new AsyncRelayCommand(ChooseRemixFileAsync, () => !IsBusy);
         SelectRemixCategoryCommand = new RelayCommand<string>(SelectRemixCategory);
@@ -147,10 +173,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         RemoveRemixCoverCommand = new RelayCommand(() => { RemixCoverAction = "Remove"; RemixCoverPath = ""; });
         AddMetadataTagCommand = new RelayCommand(() => RemixCustomTags.Add(new MetadataTagViewModel()));
         RemoveMetadataTagCommand = new RelayCommand<MetadataTagViewModel>(tag => RemixCustomTags.Remove(tag));
-        PreviewRemixCommand = new AsyncRelayCommand(PreviewRemixAsync, () => !IsBusy && RemixDurationSeconds > 0);
+        PreviewRemixCommand = new AsyncRelayCommand(() => PreviewRemixAsync(), () => !IsBusy && RemixDurationSeconds > 0);
         StopRemixCommand = new RelayCommand(() => { CancelActiveOperation(); previewPlayer.Stop(); Status = "Remix preview stopped."; });
         CancelOperationCommand = new RelayCommand(CancelActiveOperation);
         ExportRemixCommand = new AsyncRelayCommand(ExportRemixAsync, () => !IsBusy && RemixDurationSeconds > 0);
+        PreviewOriginalCommand = new AsyncRelayCommand(() => PreviewRemixAsync(true), () => !IsBusy && RemixDurationSeconds > 0);
+        PreviewArtworkCommand = new AsyncRelayCommand(PreviewArtworkAsync, () => !IsBusy && SelectedArtworkAlbum is not null);
+        SaveReportCommand = new AsyncRelayCommand(SaveReportAsync, () => !IsBusy);
+        OpenDiagnosticsCommand = new RelayCommand(OpenDiagnostics);
+        OpenArtworkFolderCommand = new RelayCommand(OpenArtworkFolder);
     }
 
     public IReadOnlyList<AudioFormat> Formats => AudioFormats.All;
@@ -160,17 +191,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsConvertPage => activeWorkspace == "Convert";
     public bool IsCutPage => activeWorkspace == "Cut";
     public bool IsCompressionPage => activeWorkspace == "Compress";
+    public bool IsArtworkPage => activeWorkspace == "Artwork";
     public bool IsAboutPage => activeWorkspace == "About";
     public bool IsRemixPage => activeWorkspace == "Remix";
     public bool IsToolWorkspace => !IsAboutPage;
     public string ConvertTabState => IsConvertPage ? "Active" : "Inactive";
     public string CutTabState => IsCutPage ? "Active" : "Inactive";
     public string CompressionTabState => IsCompressionPage ? "Active" : "Inactive";
+    public string ArtworkTabState => IsArtworkPage ? "Active" : "Inactive";
     public string AboutTabState => IsAboutPage ? "Active" : "Inactive";
     public string RemixTabState => IsRemixPage ? "Active" : "Inactive";
-    public string ProductVersion => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "1.1.0";
+    public string ProductVersion => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "1.2.0";
     public bool IsBusy { get => isBusy; private set { if (Set(ref isBusy, value)) { Raise(nameof(IsWorkspaceEnabled)); RaiseCommands(); } } }
-    public bool IsWorkspaceEnabled => !IsBusy;
+    public bool IsWorkspaceEnabled => !IsBusy && !closing;
     public bool FfmpegMissing { get => ffmpegMissing; private set => Set(ref ffmpegMissing, value); }
     public string Theme { get => theme; private set { if (Set(ref theme, value)) Raise(nameof(ThemeButtonText)); } }
     public string ThemeButtonText => Theme.Equals("Oled", StringComparison.OrdinalIgnoreCase) ? "WHITE" : "OLED";
@@ -228,6 +261,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool CompressionOverwrite { get => compressionOverwrite; set => Set(ref compressionOverwrite, value); }
     public string CompressionEstimate { get => compressionEstimate; private set => Set(ref compressionEstimate, value); }
     public string CompressionReport { get => compressionReport; private set => Set(ref compressionReport, value); }
+    public IReadOnlyList<ArtworkOutputFormat> ArtworkOutputFormats { get; } = Enum.GetValues<ArtworkOutputFormat>();
+    public string ArtworkSourcePath { get => artworkSourcePath; set { if (Set(ref artworkSourcePath, value)) { RaiseCommands(); } } }
+    public string ArtworkOutputFolder { get => artworkOutputFolder; set => Set(ref artworkOutputFolder, value); }
+    public ArtworkOutputFormat ArtworkOutputFormat
+    {
+        get => artworkOutputFormat;
+        set { if (Set(ref artworkOutputFormat, value)) Raise(nameof(IsArtworkConversion)); }
+    }
+    public bool IsArtworkConversion => ArtworkOutputFormat != ArtworkOutputFormat.Original;
+    public bool ArtworkLimitDimensions { get => artworkLimitDimensions; set => Set(ref artworkLimitDimensions, value); }
+    public string ArtworkMaximumDimension { get => artworkMaximumDimension; set => Set(ref artworkMaximumDimension, value); }
+    public string ArtworkEstimate { get => artworkEstimate; private set => Set(ref artworkEstimate, value); }
+    public string ArtworkReport { get => artworkReport; private set => Set(ref artworkReport, value); }
     public ObservableCollection<RemixEffectViewModel> RemixEffects { get; } = [];
     public ObservableCollection<MetadataTagViewModel> RemixCustomTags { get; } = [];
     public IReadOnlyList<RemixEffectKind> RemixEffectKinds { get; } = Enum.GetValues<RemixEffectKind>();
@@ -249,6 +295,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => selectedRemixIntensity;
         set
         {
+            if (selectedRemixIntensity == value) return;
+            if (selectedRemixPreset is not null && remixRackDirty && RemixEffects.Count > 0
+                && !dialogs.Confirm("Changing intensity replaces your edited rack. Continue?"))
+            {
+                Raise(nameof(SelectedRemixIntensity));
+                return;
+            }
             if (!Set(ref selectedRemixIntensity, value) || selectedRemixPreset is not { } preset) return;
             ApplyRemixPresetInternal(preset);
         }
@@ -256,6 +309,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string RemixAnalysisStatus { get => remixAnalysisStatus; private set => Set(ref remixAnalysisStatus, value); }
     public string RemixAdaptiveExplanation { get => remixAdaptiveExplanation; private set => Set(ref remixAdaptiveExplanation, value); }
     public string RemixAdaptiveLabel => remixAnalysis is null ? "STATIC" : "ADAPTIVE";
+    public bool IsExtremeAudioActive => RemixEffects.Any(effect => effect.Enabled && effect.Kind is RemixEffectKind.Distortion or RemixEffectKind.BitCrusher);
     public string SpeedPitchCategoryState => SelectedRemixCategory == RemixPresetCategory.SpeedPitch ? "Active" : "Inactive";
     public string BassPunchCategoryState => SelectedRemixCategory == RemixPresetCategory.BassPunch ? "Active" : "Inactive";
     public string AtmosphereCategoryState => SelectedRemixCategory == RemixPresetCategory.Atmosphere ? "Active" : "Inactive";
@@ -305,6 +359,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public RelayCommand ShowConvertCommand { get; }
     public RelayCommand ShowCutCommand { get; }
     public RelayCommand ShowCompressCommand { get; }
+    public RelayCommand ShowArtworkCommand { get; }
     public RelayCommand ShowAboutCommand { get; }
     public RelayCommand ShowRemixCommand { get; }
     public AsyncRelayCommand ToggleThemeCommand { get; }
@@ -323,6 +378,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public RelayCommand ChooseCompressionOutputCommand { get; }
     public AsyncRelayCommand AnalyzeCompressionCommand { get; }
     public AsyncRelayCommand CompressCommand { get; }
+    public AsyncRelayCommand ChooseArtworkFileCommand { get; }
+    public AsyncRelayCommand ChooseArtworkFolderCommand { get; }
+    public RelayCommand ChooseArtworkOutputCommand { get; }
+    public AsyncRelayCommand AnalyzeArtworkCommand { get; }
+    public AsyncRelayCommand ExtractArtworkCommand { get; }
     public RelayCommand OpenGitHubCommand { get; }
     public AsyncRelayCommand ChooseRemixFileCommand { get; }
     public RelayCommand<string> SelectRemixCategoryCommand { get; }
@@ -342,16 +402,36 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public RelayCommand StopRemixCommand { get; }
     public AsyncRelayCommand ExportRemixCommand { get; }
     public RelayCommand CancelOperationCommand { get; }
+    public AsyncRelayCommand PreviewOriginalCommand { get; }
+    public AsyncRelayCommand PreviewArtworkCommand { get; }
+    public AsyncRelayCommand SaveReportCommand { get; }
+    public RelayCommand OpenDiagnosticsCommand { get; }
+    public RelayCommand OpenArtworkFolderCommand { get; }
+    public double PreviewVolume
+    {
+        get => previewVolume;
+        set { if (double.IsFinite(value)) Set(ref previewVolume, Math.Clamp(value, 0, 100)); }
+    }
+    public ObservableCollection<ArtworkPlannedAlbum> ArtworkAlbums { get; } = [];
+    public ArtworkPlannedAlbum? SelectedArtworkAlbum
+    {
+        get => selectedArtworkAlbum;
+        set { if (Set(ref selectedArtworkAlbum, value)) { ArtworkPreview = null; ArtworkPreviewInfo = "Select Preview cover to load the image."; PreviewArtworkCommand.RaiseCanExecuteChanged(); } }
+    }
+    public System.Windows.Media.Imaging.BitmapImage? ArtworkPreview { get => artworkPreview; private set => Set(ref artworkPreview, value); }
+    public string ArtworkPreviewInfo { get => artworkPreviewInfo; private set => Set(ref artworkPreviewInfo, value); }
 
     public async Task InitializeAsync()
     {
         var settings = await settingsStore.LoadAsync();
+        if (closing) return;
         Theme = settings.Theme; OutputFolder = settings.LastOutputDirectory ?? ""; ThemeService.Apply(Theme);
         TryLocateFfmpeg();
     }
 
     public async Task AcceptDropAsync(IReadOnlyList<string> paths)
     {
+        if (IsBusy || closing) return;
         var path = paths.FirstOrDefault(item => File.Exists(item) || Directory.Exists(item));
         if (path is null) return;
         if (IsConvertPage) SourcePath = path;
@@ -360,6 +440,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             CompressionSourcePath = path;
             await AnalyzeCompressionAsync();
+        }
+        else if (IsArtworkPage)
+        {
+            ArtworkSourcePath = path;
+            await AnalyzeArtworkAsync();
         }
         else if (IsRemixPage && File.Exists(path)) await LoadRemixSourceAsync(path);
     }
@@ -370,12 +455,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(IsConvertPage));
         Raise(nameof(IsCutPage));
         Raise(nameof(IsCompressionPage));
+        Raise(nameof(IsArtworkPage));
         Raise(nameof(IsAboutPage));
         Raise(nameof(IsRemixPage));
         Raise(nameof(IsToolWorkspace));
         Raise(nameof(ConvertTabState));
         Raise(nameof(CutTabState));
         Raise(nameof(CompressionTabState));
+        Raise(nameof(ArtworkTabState));
         Raise(nameof(AboutTabState));
         Raise(nameof(RemixTabState));
     }
@@ -390,7 +477,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         try
         {
-            tools = FfmpegLocator.Find(); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools); remixAnalyzer = new AdaptiveAudioAnalyzer(tools);
+            tools = FfmpegLocator.Find(); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools); remixAnalyzer = new AdaptiveAudioAnalyzer(tools); artworkExtractor = new ArtworkExtractionService(tools);
             FfmpegMissing = false; Status = "FFmpeg ready. All processing stays local.";
         }
         catch (FfmpegDependencyException error)
@@ -405,7 +492,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             var installer = new FfmpegInstaller();
             var installProgress = new Progress<(double Fraction, string Status)>(item => UpdateOperationProgress(item.Fraction, item.Status));
-            tools = await installer.InstallAsync(progress: installProgress, cancellationToken: ActiveOperationToken); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools); remixAnalyzer = new AdaptiveAudioAnalyzer(tools); FfmpegMissing = false;
+            tools = await installer.InstallAsync(progress: installProgress, cancellationToken: ActiveOperationToken); audio = new AudioProcessingService(tools); probe = new FfprobeService(tools.FfprobePath); remix = new RemixProcessingService(tools); remixAnalyzer = new AdaptiveAudioAnalyzer(tools); artworkExtractor = new ArtworkExtractionService(tools); FfmpegMissing = false;
         });
     }
 
@@ -426,6 +513,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (path is null) return;
         CompressionSourcePath = path;
         await AnalyzeCompressionAsync();
+    }
+
+    private async Task ChooseArtworkFileAsync()
+    {
+        var path = dialogs.ChooseAudioFile();
+        if (path is null) return;
+        ArtworkSourcePath = path;
+        await AnalyzeArtworkAsync();
+    }
+
+    private async Task ChooseArtworkFolderAsync()
+    {
+        var path = dialogs.ChooseFolder();
+        if (path is null) return;
+        ArtworkSourcePath = path;
+        await AnalyzeArtworkAsync();
     }
 
     private async Task ChooseRemixFileAsync()
@@ -461,7 +564,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             LoadRemixMetadata(info.Tags);
             UpdateOperationProgress(1, $"Remix source ready: {Path.GetFileName(path)}");
         });
-        if (RemixSourcePath == path && remixAnalyzer is not null) StartRemixAnalysis(path);
+        if (!closing && RemixSourcePath == path && remixAnalyzer is not null) StartRemixAnalysis(path);
     }
 
     private void SelectRemixCategory(string categoryName)
@@ -473,6 +576,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         if (remixRackDirty && RemixEffects.Count > 0
             && !dialogs.Confirm("Applying a preset will replace the current effect rack. Continue?")) return;
+        if (definition.Preset == RemixPreset.Earrape
+            && !dialogs.Confirm("HEARING WARNING: EARRAPE creates extreme distortion and loudness. Lower your headphone or speaker volume before Preview or Export. High-volume listening can permanently damage hearing. Apply this preset?")) return;
         selectedRemixPreset = definition.Preset;
         ApplyRemixPresetInternal(definition.Preset);
     }
@@ -485,6 +590,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             RemixEffects.Add(RemixEffectViewModel.From(effect, OnRemixRackChanged));
         RemixAdaptiveExplanation = result.Explanation;
         remixRackDirty = false;
+        Raise(nameof(IsExtremeAudioActive));
         Raise(nameof(RemixOutputDuration));
     }
 
@@ -494,6 +600,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         selectedRemixPreset = null;
         remixRackDirty = false;
         RemixAdaptiveExplanation = "Custom rack selected. Add and order effects manually.";
+        Raise(nameof(IsExtremeAudioActive));
         Raise(nameof(RemixOutputDuration));
     }
 
@@ -501,7 +608,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         remixAnalysisCancellation = new CancellationTokenSource();
         RemixAnalysisStatus = "Analyzing the full song locally…";
-        _ = AnalyzeRemixSourceAsync(path, remixAnalysisCancellation.Token);
+        var task = AnalyzeRemixSourceAsync(path, remixAnalysisCancellation.Token);
+        analysisTasks.Add(task);
+        _ = ObserveAnalysisAsync(task);
+    }
+
+    private async Task ObserveAnalysisAsync(Task task)
+    {
+        try { await task; }
+        finally { analysisTasks.Remove(task); }
     }
 
     private async Task AnalyzeRemixSourceAsync(string path, CancellationToken cancellationToken)
@@ -571,14 +686,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void OnRemixRackChanged()
     {
         remixRackDirty = true;
+        Raise(nameof(IsExtremeAudioActive));
         Raise(nameof(RemixOutputDuration));
     }
 
-    private async Task PreviewRemixAsync()
+    private async Task PreviewRemixAsync(bool original = false)
     {
         await RunBusyAsync(async () =>
         {
-            var rack = BuildRemixRack();
+            EnsureFfmpeg();
+            var rack = original ? Array.Empty<RemixEffect>() : BuildRemixRack();
             RemixRackValidator.Validate(rack, RemixDurationSeconds);
             previewPlayer.Stop();
             var progress = new Progress<double>(fraction => UpdateOperationProgress(fraction, "Rendering 20-second remix preview…"));
@@ -589,9 +706,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 RemixDurationSeconds,
                 RemixPreviewStartSeconds,
                 progress,
-                ActiveOperationToken);
+                ActiveOperationToken,
+                previewGain: PreviewVolume / 100);
             previewPlayer.Play(output);
-            UpdateOperationProgress(1, "Playing remix preview.");
+            UpdateOperationProgress(1, original ? "Playing original excerpt." : "Playing remix excerpt.");
         });
     }
 
@@ -701,6 +819,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var configuredOutput = OutputFolder;
             var configuredSuffix = Suffix;
             var options = CreateOptions(format);
+            Report = "Conversion started.";
             var files = EnumerateSources(SourcePath).ToArray();
             if (files.Length == 0) throw new InvalidDataException("No supported audio file was found.");
             var results = new List<FileResult>();
@@ -717,9 +836,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     var itemProgress = new Progress<double>(fraction => UpdateOperationProgress((index + fraction) / files.Length, $"Converting {index + 1}/{files.Length}: {Path.GetFileName(file)}"));
                     await audio!.ConvertAsync(file, output, options, info.DurationSeconds, itemProgress, ActiveOperationToken);
                     results.Add(new FileResult(file, output, null));
+                    AppendOperationReport($"OK  {file} -> {output}");
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (Exception error) { results.Add(new FileResult(file, null, error.Message)); }
+                catch (Exception error) { results.Add(new FileResult(file, null, error.Message)); AppendOperationReport($"FAIL  {file}: {error.Message}"); }
             }
             var batch = new BatchResult(results);
             Report = $"Completed: {batch.Succeeded} succeeded, {batch.Failed} failed\n" + string.Join('\n', results.Select(result => result.Succeeded ? $"OK  {Path.GetFileName(result.InputPath)} -> {result.OutputPath}" : $"FAIL  {Path.GetFileName(result.InputPath)}: {result.Error}"));
@@ -766,6 +886,178 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         });
     }
 
+    private async Task PreviewArtworkAsync()
+    {
+        var album = SelectedArtworkAlbum;
+        if (album is null) return;
+        await RunBusyAsync(async () =>
+        {
+            EnsureFfmpeg();
+            var result = await artworkExtractor!.ExtractAsync(album, artworkPreviewDirectory,
+                new ArtworkExtractionOptions(ArtworkOutputFormat.Png, 512), cancellationToken: ActiveOperationToken);
+            if (result.Error is not null) throw new InvalidDataException(result.Error);
+            using var stream = File.OpenRead(result.OutputPath!);
+            var image = new System.Windows.Media.Imaging.BitmapImage();
+            image.BeginInit();
+            image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            ArtworkPreview = image;
+            ArtworkPreviewInfo = $"{result.Album.Artwork.Width} × {result.Album.Artwork.Height} · {result.Album.Artwork.CodecName}\n{result.Album.SourcePath}";
+            UpdateOperationProgress(1, "Artwork preview ready.");
+        });
+    }
+
+    private async Task SaveReportAsync()
+    {
+        var report = activeWorkspace switch
+        {
+            "Artwork" => ArtworkReport,
+            "Compress" => CompressionReport,
+            "Remix" => RemixReport,
+            _ => Report,
+        };
+        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Text report|*.txt", FileName = "CodecTone-report.txt" };
+        if (dialog.ShowDialog() != true) return;
+        try { await File.WriteAllTextAsync(dialog.FileName, report); }
+        catch (Exception error) { diagnosticLog.Write("Save report", error.Message); dialogs.Error(error.Message); }
+    }
+
+    private void OpenDiagnostics()
+    {
+        diagnosticLog.Write("Diagnostics", "Opened by user");
+        try { Process.Start(new ProcessStartInfo(diagnosticLog.FilePath) { UseShellExecute = true }); }
+        catch (Exception error) { dialogs.Error(error.Message); }
+    }
+
+    private void OpenArtworkFolder()
+    {
+        try
+        {
+            var directory = ResolveArtworkOutputRoot();
+            if (!Directory.Exists(directory)) { dialogs.Error("The output folder does not exist yet."); return; }
+            Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
+        }
+        catch (Exception error) { dialogs.Error(error.Message); }
+    }
+
+    private async Task AnalyzeArtworkAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            var preparation = await PrepareArtworkAsync(1);
+            ArtworkEstimate = $"Scanned {preparation.SourceCount} audio file(s) · {preparation.Plan.Albums.Count} album cover(s) ready · {preparation.Plan.Skipped.Count + preparation.Failures.Count} skipped or invalid";
+            ArtworkReport = BuildArtworkPreflightReport(preparation);
+            UpdateOperationProgress(1, $"Artwork analysis ready: {preparation.Plan.Albums.Count} album(s)");
+        });
+    }
+
+    private async Task ExtractArtworkAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            ArtworkReport = "Artwork extraction started.";
+            var preparation = await PrepareArtworkAsync(0.15);
+            var options = CreateArtworkOptions();
+            var outputRoot = preparation.OutputRoot;
+            var lines = new List<string>(preparation.Failures);
+            lines.AddRange(preparation.ScanWarnings.Select(warning => "SKIP folder: " + warning));
+            lines.AddRange(preparation.Plan.Skipped.Select(item => $"SKIP  {item.SourcePath}: {item.Reason}"));
+            var succeeded = 0;
+            var failed = preparation.Failures.Count;
+            var skipped = preparation.Plan.Skipped.Count;
+            for (var index = 0; index < preparation.Plan.Albums.Count; index++)
+            {
+                var album = preparation.Plan.Albums[index];
+                var baseIndex = index;
+                var progress = new Progress<double>(fraction => UpdateOperationProgress(
+                    0.15 + (baseIndex + fraction) / Math.Max(1, preparation.Plan.Albums.Count) * 0.85,
+                    $"Extracting artwork {baseIndex + 1}/{preparation.Plan.Albums.Count}: {album.Artist} - {album.Album}"));
+                var result = await artworkExtractor!.ExtractAsync(album, outputRoot, options, progress, ActiveOperationToken);
+                if (result.Error is not null)
+                {
+                    failed++;
+                    lines.Add($"FAIL  {album.SourcePath}: {result.Error}");
+                }
+                else if (result.Skipped)
+                {
+                    skipped++;
+                    lines.Add($"SKIP  {album.Artist} - {album.Album}: identical image already exists at {result.OutputPath}");
+                }
+                else
+                {
+                    succeeded++;
+                    lines.Add($"OK    {album.Artist} - {album.Album} -> {result.OutputPath}");
+                }
+                AppendOperationReport(lines[^1]);
+            }
+            ArtworkReport = $"Completed: {succeeded} extracted, {failed} failed, {skipped} skipped\nOutput: {outputRoot}\n\n" + string.Join('\n', lines);
+            UpdateOperationProgress(1, $"Artwork extraction completed: {succeeded} extracted, {failed} failed, {skipped} skipped");
+        });
+    }
+
+    private async Task<ArtworkPreparation> PrepareArtworkAsync(double progressWeight)
+    {
+        EnsureFfmpeg();
+        var outputRoot = ResolveArtworkOutputRoot();
+        var scanWarnings = new List<string>();
+        var discovered = await Task.Run(() => CompressionFileDiscovery.Find(ArtworkSourcePath, recursive: true,
+                onSkipped: scanWarnings.Add, cancellationToken: ActiveOperationToken)
+            .Where(file => !IsPathInside(file.Path, outputRoot)).ToArray(), ActiveOperationToken);
+        foreach (var warning in scanWarnings) AppendOperationReport("SKIP folder: " + warning);
+        if (discovered.Length == 0) throw new InvalidDataException("No supported audio file was found.");
+
+        var sources = new List<ArtworkSource>();
+        var failures = new List<string>();
+        for (var index = 0; index < discovered.Length; index++)
+        {
+            var file = discovered[index];
+            try
+            {
+                var info = await probe!.ProbeAsync(file.Path, ActiveOperationToken);
+                sources.Add(new ArtworkSource(file.Path, info.Tags, info.ArtworkStreams));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) { failures.Add($"FAIL  {file.RelativePath}: {error.Message}"); }
+            UpdateOperationProgress((index + 1d) / discovered.Length * progressWeight, $"Analyzing artwork {index + 1}/{discovered.Length}: {Path.GetFileName(file.Path)}");
+        }
+        var plan = ArtworkPlanner.Create(sources);
+        ArtworkAlbums.Clear();
+        foreach (var album in plan.Albums) ArtworkAlbums.Add(album);
+        SelectedArtworkAlbum = ArtworkAlbums.FirstOrDefault();
+        return new ArtworkPreparation(plan, failures, outputRoot, discovered.Length, scanWarnings);
+    }
+
+    private ArtworkExtractionOptions CreateArtworkOptions()
+    {
+        int? maximum = null;
+        if (IsArtworkConversion && ArtworkLimitDimensions)
+        {
+            if (!int.TryParse(ArtworkMaximumDimension, out var parsed) || parsed is < 64 or > 8192)
+                throw new ArgumentException("Maximum artwork dimension must be between 64 and 8192 pixels.");
+            maximum = parsed;
+        }
+        return new ArtworkExtractionOptions(ArtworkOutputFormat, maximum);
+    }
+
+    private string ResolveArtworkOutputRoot()
+    {
+        if (!string.IsNullOrWhiteSpace(ArtworkOutputFolder)) return Path.GetFullPath(ArtworkOutputFolder);
+        return File.Exists(ArtworkSourcePath)
+            ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(ArtworkSourcePath))!, "artwork")
+            : Path.Combine(Path.GetFullPath(ArtworkSourcePath), "artwork");
+    }
+
+    private static string BuildArtworkPreflightReport(ArtworkPreparation preparation)
+    {
+        var lines = new List<string>(preparation.Failures);
+        lines.AddRange(preparation.ScanWarnings.Select(warning => "SKIP folder: " + warning));
+        lines.AddRange(preparation.Plan.Albums.Select(album => $"READY {album.Artist} - {album.Album} · stream {album.Artwork.StreamIndex} · {album.Artwork.CodecName} · {album.Artwork.Width}x{album.Artwork.Height}"));
+        lines.AddRange(preparation.Plan.Skipped.Select(item => $"SKIP  {item.SourcePath}: {item.Reason}"));
+        return lines.Count == 0 ? "No embedded artwork was found." : string.Join('\n', lines);
+    }
+
     private async Task AnalyzeCompressionAsync()
     {
         await RunBusyAsync(async () =>
@@ -775,6 +1067,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             CompressionReport = preparation.Failures.Count == 0
                 ? "Analysis completed. No invalid files found."
                 : string.Join('\n', preparation.Failures);
+            CompressionReport += "\n" + string.Join('\n', preparation.ScanWarnings.Select(warning => "SKIP folder: " + warning));
             UpdateOperationProgress(1, $"Compression analysis ready: {preparation.Plan.Files.Count} valid file(s)");
         });
     }
@@ -783,6 +1076,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         await RunBusyAsync(async () =>
         {
+            CompressionReport = "Compression started.";
             var preparation = await PrepareCompressionAsync(0.1);
             var plan = preparation.Plan;
             var outputFormat = plan.Options.OutputFormat;
@@ -806,6 +1100,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
 
             var reportLines = new List<string>(preparation.Failures);
+            reportLines.AddRange(preparation.ScanWarnings.Select(warning => "SKIP folder: " + warning));
             foreach (var skipped in plan.Files.Where(file => file.ShouldSkip))
                 reportLines.Add($"SKIP  {skipped.Source.RelativePath}: {skipped.SkipReason}");
 
@@ -860,6 +1155,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     failed++;
                     reportLines.Add($"FAIL  {file.Source.RelativePath}: {error.Message}");
                 }
+                AppendOperationReport(reportLines[^1]);
                 activeIndex++;
             }
 
@@ -879,9 +1175,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         EnsureFfmpeg();
         var outputRoot = ResolveCompressionOutputRoot();
-        var discovered = CompressionFileDiscovery.Find(CompressionSourcePath, recursive: true)
-            .Where(file => !IsPathInside(file.Path, outputRoot))
-            .ToArray();
+        var scanWarnings = new List<string>();
+        var discovered = await Task.Run(() => CompressionFileDiscovery.Find(CompressionSourcePath, recursive: true,
+                onSkipped: scanWarnings.Add, cancellationToken: ActiveOperationToken)
+            .Where(file => !IsPathInside(file.Path, outputRoot)).ToArray(), ActiveOperationToken);
+        foreach (var warning in scanWarnings) AppendOperationReport("SKIP folder: " + warning);
         if (discovered.Length == 0) throw new InvalidDataException("No supported audio file was found.");
 
         var sources = new List<CompressionSource>();
@@ -921,7 +1219,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             CompressionOverwrite);
         var plan = CompressionPlanner.Create(sources, options);
         var lookup = discovered.ToDictionary(file => file.Path, StringComparer.OrdinalIgnoreCase);
-        return new CompressionPreparation(plan, lookup, failures, outputRoot);
+        return new CompressionPreparation(plan, lookup, failures, outputRoot, scanWarnings);
     }
 
     private string ResolveCompressionOutputRoot()
@@ -973,7 +1271,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         CompressionPlan Plan,
         IReadOnlyDictionary<string, CompressionDiscoveredFile> Discovered,
         IReadOnlyList<string> Failures,
-        string OutputRoot);
+        string OutputRoot,
+        IReadOnlyList<string> ScanWarnings);
+
+    private sealed record ArtworkPreparation(
+        ArtworkPlan Plan,
+        IReadOnlyList<string> Failures,
+        string OutputRoot,
+        int SourceCount,
+        IReadOnlyList<string> ScanWarnings);
 
     private TrimSelection CreateTrim() => TrimSelection.Create(StartSeconds, EndSeconds, FadeInEnabled ? FadeInSeconds : 0, FadeOutEnabled ? FadeOutSeconds : 0);
     private ConversionOptions CreateOptions(AudioFormat format) => new(
@@ -986,11 +1292,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private static int? ParseOptionalInt(string value) => int.TryParse(value, out var result) ? result : null;
     private static string ResolveOutputDirectory(string source, string configured) => string.IsNullOrWhiteSpace(configured) ? Path.Combine(Path.GetDirectoryName(source)!, "converted") : configured;
     private static IEnumerable<string> EnumerateSources(string source) => File.Exists(source) ? [source] : Directory.Exists(source) ? Directory.EnumerateFiles(source).Where(path => { try { _ = AudioFormats.FromPath(path); return true; } catch { return false; } }) : [];
-    private void EnsureFfmpeg() { if (tools is null || audio is null || probe is null || remix is null) throw new FfmpegDependencyException("FFmpeg is required. Install it from this application first."); }
+    private void EnsureFfmpeg() { if (tools is null || audio is null || probe is null || remix is null || artworkExtractor is null) throw new FfmpegDependencyException("FFmpeg is required. Install it from this application first."); }
 
     private async Task RunBusyAsync(Func<Task> action)
     {
-        if (IsBusy) return;
+        if (IsBusy || closing) return;
+        operationWorkspace = activeWorkspace;
+        operationFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        diagnosticLog.Write(operationWorkspace, "Operation started");
         IsBusy = true;
         activeOperationCancellation = new CancellationTokenSource();
         Progress = 0;
@@ -1007,13 +1316,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             operationTimer.Stop();
             TimingText = $"Cancelled after {OperationTiming.FormatCompact(operationTimer.Elapsed)}";
             Status = "Operation cancelled.";
+            AppendOperationReport("CANCELLED. Completed files are listed above; remaining files were not processed.");
         }
         catch (Exception error)
         {
             operationTimer.Stop();
             TimingText = $"Stopped after {OperationTiming.FormatCompact(operationTimer.Elapsed)}";
             Status = error.Message;
-            dialogs.Error(error.Message);
+            AppendOperationReport("FAIL  " + error.Message);
+            if (!closing) dialogs.Error(error.Message);
         }
         finally
         {
@@ -1025,7 +1336,36 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             IsBusy = false;
             activeOperationCancellation.Dispose();
             activeOperationCancellation = null;
+            diagnosticLog.Write(operationWorkspace, Status);
+            operationFinished?.TrySetResult();
         }
+    }
+
+    private void AppendOperationReport(string line)
+    {
+        switch (operationWorkspace)
+        {
+            case "Compress": CompressionReport += "\n" + line; break;
+            case "Artwork": ArtworkReport += "\n" + line; break;
+            case "Remix": RemixReport += "\n" + line; break;
+            default: Report += "\n" + line; break;
+        }
+        diagnosticLog.Write(operationWorkspace, line);
+    }
+
+    public async Task ShutdownAsync()
+    {
+        closing = true;
+        Raise(nameof(IsWorkspaceEnabled));
+        activeOperationCancellation?.Cancel();
+        remixAnalysisCancellation?.Cancel();
+        previewPlayer.Stop();
+        if (operationFinished is not null) await operationFinished.Task;
+        await Task.WhenAll(analysisTasks.ToArray());
+        Dispose();
+        try { if (Directory.Exists(artworkPreviewDirectory)) Directory.Delete(artworkPreviewDirectory, true); }
+        catch (IOException error) { diagnosticLog.Write("Cleanup", error.Message); }
+        catch (UnauthorizedAccessException error) { diagnosticLog.Write("Cleanup", error.Message); }
     }
 
     private CancellationToken ActiveOperationToken => activeOperationCancellation?.Token ?? CancellationToken.None;
@@ -1064,7 +1404,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         catch (Exception error) { dialogs.Error($"Unable to save theme settings: {error.Message}"); }
     }
 
-    private void RaiseCommands() { ConvertCommand.RaiseCanExecuteChanged(); CutCommand.RaiseCanExecuteChanged(); PreviewCommand.RaiseCanExecuteChanged(); InstallFfmpegCommand.RaiseCanExecuteChanged(); ChooseCutFileCommand.RaiseCanExecuteChanged(); ChooseCompressionFileCommand.RaiseCanExecuteChanged(); AnalyzeCompressionCommand.RaiseCanExecuteChanged(); CompressCommand.RaiseCanExecuteChanged(); ChooseRemixFileCommand.RaiseCanExecuteChanged(); PreviewRemixCommand.RaiseCanExecuteChanged(); ExportRemixCommand.RaiseCanExecuteChanged(); }
+    private void RaiseCommands() { PreviewOriginalCommand.RaiseCanExecuteChanged(); PreviewArtworkCommand.RaiseCanExecuteChanged(); SaveReportCommand.RaiseCanExecuteChanged(); ConvertCommand.RaiseCanExecuteChanged(); CutCommand.RaiseCanExecuteChanged(); PreviewCommand.RaiseCanExecuteChanged(); InstallFfmpegCommand.RaiseCanExecuteChanged(); ChooseCutFileCommand.RaiseCanExecuteChanged(); ChooseCompressionFileCommand.RaiseCanExecuteChanged(); AnalyzeCompressionCommand.RaiseCanExecuteChanged(); CompressCommand.RaiseCanExecuteChanged(); ChooseArtworkFileCommand.RaiseCanExecuteChanged(); ChooseArtworkFolderCommand.RaiseCanExecuteChanged(); AnalyzeArtworkCommand.RaiseCanExecuteChanged(); ExtractArtworkCommand.RaiseCanExecuteChanged(); ChooseRemixFileCommand.RaiseCanExecuteChanged(); PreviewRemixCommand.RaiseCanExecuteChanged(); ExportRemixCommand.RaiseCanExecuteChanged(); }
     public void Dispose()
     {
         if (disposed) return;

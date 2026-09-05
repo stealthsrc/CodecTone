@@ -35,7 +35,8 @@ public sealed class RemixProcessingService(FfmpegTools tools)
         double sourceDurationSeconds,
         double previewStartSeconds,
         IProgress<double>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        double previewGain = 1)
     {
         var output = AppPaths.RemixPreviewWave;
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
@@ -49,7 +50,7 @@ public sealed class RemixProcessingService(FfmpegTools tools)
                 sourceDurationSeconds,
                 previewStartSeconds,
                 20,
-                impulseResponsePath),
+                impulseResponsePath, previewGain),
             Math.Min(20, sourceDurationSeconds - previewStartSeconds),
             progress,
             cancellationToken);
@@ -68,6 +69,9 @@ public sealed class RemixProcessingService(FfmpegTools tools)
         IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        if (Path.GetFullPath(inputPath).Equals(Path.GetFullPath(finalPath), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Source and destination must be different files.");
+        cancellationToken.ThrowIfCancellationRequested();
         ValidateCover(metadata);
         if (File.Exists(finalPath) && !encoding.Overwrite)
             throw new IOException($"Destination already exists: {finalPath}");
@@ -107,6 +111,7 @@ public sealed class RemixProcessingService(FfmpegTools tools)
                 throw new InvalidDataException("The staged remix has no valid audio duration.");
 
             await CopyAsync(stagedPath, destinationTemporary, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(destinationTemporary, finalPath, encoding.Overwrite);
         }
         finally

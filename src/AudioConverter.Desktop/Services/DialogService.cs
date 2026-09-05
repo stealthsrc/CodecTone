@@ -3,7 +3,16 @@ using System.Windows;
 
 namespace AudioConverter.Desktop.Services;
 
-public sealed class DialogService
+public interface IDialogService
+{
+    string? ChooseAudioFile();
+    string? ChooseFolder(string? initialDirectory = null);
+    string? ChooseCoverImage();
+    void Error(string message);
+    bool Confirm(string message);
+}
+
+public sealed class DialogService : IDialogService
 {
     private const string AudioFilter = "Audio files|*.mp3;*.flac;*.wav;*.ogg;*.aac;*.m4a|All files|*.*";
 

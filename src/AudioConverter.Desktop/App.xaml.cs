@@ -10,6 +10,7 @@ public partial class App : Application
     private EventWaitHandle? activationEvent;
     private readonly CancellationTokenSource shutdown = new();
     private bool ownsMutex;
+    private Task? activationListener;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -29,7 +30,7 @@ public partial class App : Application
         var window = new MainWindow { DataContext = viewModel };
         MainWindow = window;
         window.Show();
-        _ = ListenForActivationAsync(window, shutdown.Token);
+        activationListener = ListenForActivationAsync(window, shutdown.Token);
         await viewModel.InitializeAsync();
     }
 
@@ -37,6 +38,7 @@ public partial class App : Application
     {
         shutdown.Cancel();
         activationEvent?.Set();
+        activationListener?.GetAwaiter().GetResult();
         activationEvent?.Dispose();
         if (ownsMutex) instanceMutex?.ReleaseMutex();
         instanceMutex?.Dispose();
@@ -44,24 +46,25 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    private async Task ListenForActivationAsync(Window window, CancellationToken cancellationToken)
+    private Task ListenForActivationAsync(Window window, CancellationToken cancellationToken)
     {
-        await Task.Run(() =>
+        return Task.Run(() =>
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                activationEvent?.WaitOne();
+                WaitHandle.WaitAny([activationEvent!, cancellationToken.WaitHandle]);
                 if (cancellationToken.IsCancellationRequested) break;
-                Dispatcher.Invoke(() =>
+                _ = Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    if (cancellationToken.IsCancellationRequested) return;
                     if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
                     window.Show();
                     window.Activate();
                     window.Topmost = true;
                     window.Topmost = false;
                     window.Focus();
-                });
+                }));
             }
-        }, cancellationToken);
+        });
     }
 }

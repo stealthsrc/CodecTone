@@ -94,4 +94,16 @@ public sealed class RemixFilterBuilderTests
 
         Assert.AreEqual("loudnorm=I=-14:TP=-1.5:LRA=11", filter);
     }
+
+    [TestMethod]
+    public void Build_CreatesExtremeDistortionAndBitCrusherFilters()
+    {
+        RemixEffect[] rack = [new DistortionEffect(30, 1, 4), new BitCrusherEffect(3, 16, 1), new SoftLimiterEffect(-0.1)];
+
+        var filter = RemixFilterBuilder.Build(rack, 44_100, 120, preview: true);
+
+        StringAssert.Contains(filter, "aformat=channel_layouts=stereo,volume=30dB,asoftclip=type=hard:threshold=1:output=1:oversample=4");
+        StringAssert.Contains(filter, "acrusher=bits=3:samples=16:mix=1:mode=lin:aa=0");
+        StringAssert.EndsWith(filter, "alimiter=limit=0.989:level=false");
+    }
 }

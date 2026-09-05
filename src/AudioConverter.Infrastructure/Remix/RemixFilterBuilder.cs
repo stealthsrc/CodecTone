@@ -103,6 +103,8 @@ public static class RemixFilterBuilder
         HighPassEffect value => $"highpass=f={Number(value.FrequencyHz)}",
         LowPassEffect value => $"lowpass=f={Number(value.FrequencyHz)}",
         SoftLimiterEffect value => $"alimiter=limit={Number(DbToLinear(value.CeilingDb))}:level=false",
+        DistortionEffect value => $"aformat=channel_layouts=stereo,volume={Number(value.DriveDb)}dB,asoftclip=type=hard:threshold={value.Threshold.ToString("0.########", CultureInfo.InvariantCulture)}:output=1:oversample={Number(value.Oversample)}",
+        BitCrusherEffect value => $"acrusher=bits={Number(value.Bits)}:samples={Number(value.Samples)}:mix={Number(value.Mix)}:mode=lin:aa=0",
         _ => "anull",
     };
 

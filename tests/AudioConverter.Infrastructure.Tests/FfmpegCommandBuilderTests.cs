@@ -74,7 +74,7 @@ public sealed class FfmpegCommandBuilderTests
     {
         var args = FfmpegCommandBuilder.BuildWaveform("long.flac", width: 900, durationSeconds: 36_000);
 
-        var sampleRate = args[Array.IndexOf(args, "-ar") + 1];
-        Assert.AreEqual("10", sampleRate);
+        CollectionAssert.DoesNotContain(args, "-ar");
+        CollectionAssert.DoesNotContain(args, "-ac");
     }
 }

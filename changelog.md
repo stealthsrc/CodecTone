@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.2.0 - 2026-09-05
+
+### Added
+
+- Added the Extract Artwork workspace for one file or a recursive folder, with one deduplicated front cover per album.
+- Added original image extraction and optional PNG, JPEG, or WebP conversion with bounded dimensions.
+- Added streamed SHA-256 collision detection, numbered output names, progress, cancellation, and batch reporting.
+- Added editable Distortion and Bit Crusher modules. The fixed-power EARRAPE preset uses classic wide-band clipping without bit crushing, with per-activation confirmation, a persistent hearing warning, and a -0.1 dBFS final ceiling.
+- Original/remix preview comparison with a separate preview volume applied on the next playback.
+- Cover preview with source details and an output-folder shortcut.
+- Text report export and a bounded local diagnostic log accessible from About.
+- Desktop regression tests for shutdown, edited racks, and OLED/WHITE layouts.
+
+### Fixed
+
+- Wait for pending audio work and analysis before closing the window.
+- Reject remix exports over their source and honor cancellation immediately before publishing outputs.
+- Apply remix fades on the full timeline before extracting previews, including tempo changes.
+- Preserve manual rack edits when an intensity change is declined.
+- Validate integer distortion oversampling and preserve small clipping thresholds.
+- Select album front covers across tracks, retry alternate candidates, and isolate artwork preparation failures.
+- Aggregate waveform peaks at the source rate without downmix cancellation or low-pass loss.
+- Keep partial batch reports after cancellation and report inaccessible or linked folders.
+
 ## 1.1.0 - 2026-08-25
 
 ### Added

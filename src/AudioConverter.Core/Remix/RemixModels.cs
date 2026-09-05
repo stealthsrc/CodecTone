@@ -34,6 +34,7 @@ public enum RemixPreset
     WideMaster,
     StreamingMaster,
     ClubMaster,
+    Earrape,
 }
 
 public enum RemixPresetCategory
@@ -84,6 +85,8 @@ public enum RemixEffectKind
     HighPass,
     LowPass,
     SoftLimiter,
+    Distortion,
+    BitCrusher,
 }
 
 public abstract record RemixEffect(RemixEffectKind Kind, bool Enabled = true);
@@ -129,6 +132,12 @@ public sealed record LowPassEffect(double FrequencyHz, bool IsEnabled = true)
 
 public sealed record SoftLimiterEffect(double CeilingDb, bool IsEnabled = true)
     : RemixEffect(RemixEffectKind.SoftLimiter, IsEnabled);
+
+public sealed record DistortionEffect(double DriveDb, double Threshold, double Oversample, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.Distortion, IsEnabled);
+
+public sealed record BitCrusherEffect(double Bits, double Samples, double Mix, bool IsEnabled = true)
+    : RemixEffect(RemixEffectKind.BitCrusher, IsEnabled);
 
 public enum CoverArtAction
 {

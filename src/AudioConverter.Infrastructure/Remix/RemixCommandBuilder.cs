@@ -15,10 +15,18 @@ public static class RemixCommandBuilder
         double sourceDurationSeconds,
         double previewStartSeconds,
         double previewDurationSeconds,
-        string? reverbImpulsePath = null)
+        string? reverbImpulsePath = null,
+        double previewGain = 1)
     {
+        if (!double.IsFinite(previewGain) || previewGain < 0 || previewGain > 1)
+            throw new ArgumentOutOfRangeException(nameof(previewGain));
+        if (!double.IsFinite(previewStartSeconds) || previewStartSeconds < 0 || previewStartSeconds >= sourceDurationSeconds
+            || !double.IsFinite(previewDurationSeconds) || previewDurationSeconds <= 0)
+            throw new ArgumentException("Preview interval is outside the source.");
+        var rate = effects.OfType<TempoPitchEffect>().FirstOrDefault(effect => effect.Enabled)?.Rate ?? 1;
         var end = Math.Min(sourceDurationSeconds, previewStartSeconds + previewDurationSeconds);
-        var filters = $"atrim=start={Number(previewStartSeconds)}:end={Number(end)},asetpts=PTS-STARTPTS";
+        var filters = $"atrim=start={Number(previewStartSeconds / rate)}:end={Number(end / rate)},asetpts=PTS-STARTPTS";
+        if (previewGain != 1) filters += $",volume={Number(previewGain)}";
         var reverbCount = effects.Count(effect => effect.Enabled && effect is ReverbEffect);
         if (reverbCount > 0)
         {
@@ -32,9 +40,9 @@ public static class RemixCommandBuilder
                 sourceDurationSeconds,
                 preview: true,
                 Enumerable.Range(1, reverbCount).ToArray());
-            var complex = $"[0:a]{filters}[previewin];" + graph.Graph.Replace("[0:a]", "[previewin]", StringComparison.Ordinal);
+            var complex = graph.Graph + $";[{graph.OutputLabel}]{filters}[previewout]";
             arguments.AddRange([
-                "-filter_complex", complex, "-map", $"[{graph.OutputLabel}]",
+                "-filter_complex", complex, "-map", "[previewout]",
                 "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le",
                 "-progress", "pipe:1", "-nostats", outputPath,
             ]);
@@ -42,7 +50,7 @@ public static class RemixCommandBuilder
         }
 
         var rack = RemixFilterBuilder.Build(effects, sampleRate, sourceDurationSeconds, preview: true);
-        if (!string.IsNullOrEmpty(rack)) filters += "," + rack;
+        if (!string.IsNullOrEmpty(rack)) filters = rack + "," + filters;
         return
         [
             "-hide_banner", "-loglevel", "error", "-y", "-i", inputPath,

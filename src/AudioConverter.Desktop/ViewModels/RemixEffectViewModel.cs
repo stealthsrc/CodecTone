@@ -25,14 +25,15 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.LoudnessNormalize => "Loudness Normalize",
         RemixEffectKind.FadeIn => "Fade In",
         RemixEffectKind.FadeOut => "Fade Out",
+        RemixEffectKind.BitCrusher => "Bit Crusher",
         _ => Kind.ToString(),
     };
     public bool Enabled { get => enabled; set { if (Set(ref enabled, value)) changed(); } }
     public double First { get => first; set { if (Set(ref first, value)) changed(); } }
     public double Second { get => second; set { if (Set(ref second, value)) changed(); } }
     public double Third { get => third; set { if (Set(ref third, value)) changed(); } }
-    public bool HasSecond => Kind is RemixEffectKind.Bass or RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor;
-    public bool HasThird => Kind is RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor;
+    public bool HasSecond => Kind is RemixEffectKind.Bass or RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor or RemixEffectKind.Distortion or RemixEffectKind.BitCrusher;
+    public bool HasThird => Kind is RemixEffectKind.Equalizer or RemixEffectKind.Reverb or RemixEffectKind.Echo or RemixEffectKind.Compressor or RemixEffectKind.Distortion or RemixEffectKind.BitCrusher;
     public string FirstLabel => Kind switch
     {
         RemixEffectKind.TempoPitch => "Rate · 0.50–2.00×",
@@ -47,6 +48,8 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.StereoWidth => "Width · 0–2",
         RemixEffectKind.HighPass or RemixEffectKind.LowPass => "Frequency · Hz",
         RemixEffectKind.SoftLimiter => "Ceiling · dB",
+        RemixEffectKind.Distortion => "Drive · dB",
+        RemixEffectKind.BitCrusher => "Bit depth · 1–24",
         _ => "Value",
     };
     public string SecondLabel => Kind switch
@@ -56,6 +59,8 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Reverb => "Decay · seconds",
         RemixEffectKind.Echo => "Feedback · 0–0.9",
         RemixEffectKind.Compressor => "Ratio · 1–10",
+        RemixEffectKind.Distortion => "Clip threshold · 0–1",
+        RemixEffectKind.BitCrusher => "Sample reduction · 1–250",
         _ => "",
     };
     public string ThirdLabel => Kind switch
@@ -64,6 +69,8 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.Reverb => "Room size · 0–1",
         RemixEffectKind.Echo => "Wet mix · 0–1",
         RemixEffectKind.Compressor => "Makeup · dB",
+        RemixEffectKind.Distortion => "Oversample · 1–16",
+        RemixEffectKind.BitCrusher => "Wet mix · 0–1",
         _ => "",
     };
 
@@ -83,6 +90,8 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.HighPass => new HighPassEffect(First, Enabled),
         RemixEffectKind.LowPass => new LowPassEffect(First, Enabled),
         RemixEffectKind.SoftLimiter => new SoftLimiterEffect(First, Enabled),
+        RemixEffectKind.Distortion => new DistortionEffect(First, Second, Third, Enabled),
+        RemixEffectKind.BitCrusher => new BitCrusherEffect(First, Second, Third, Enabled),
         _ => throw new ArgumentOutOfRangeException(),
     };
 
@@ -105,6 +114,8 @@ public sealed class RemixEffectViewModel : ObservableObject
             HighPassEffect value => (value.FrequencyHz, 0, 0),
             LowPassEffect value => (value.FrequencyHz, 0, 0),
             SoftLimiterEffect value => (value.CeilingDb, 0, 0),
+            DistortionEffect value => (value.DriveDb, value.Threshold, value.Oversample),
+            BitCrusherEffect value => (value.Bits, value.Samples, value.Mix),
             _ => (0, 0, 0),
         };
         return viewModel;
@@ -125,6 +136,8 @@ public sealed class RemixEffectViewModel : ObservableObject
         RemixEffectKind.HighPass => (30, 0, 0),
         RemixEffectKind.LowPass => (18_000, 0, 0),
         RemixEffectKind.SoftLimiter => (-1, 0, 0),
+        RemixEffectKind.Distortion => (12, 0.3, 4),
+        RemixEffectKind.BitCrusher => (8, 4, 0.5),
         _ => (0, 0, 0),
     };
 }

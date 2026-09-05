@@ -25,6 +25,7 @@ public static class TransactionalAudioOutput
         {
             await produce(staged, cancellationToken);
             await validate(staged, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(staged, destination, overwrite);
         }
         finally

@@ -22,8 +22,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private bool closeReady;
+    private bool closePending;
+    private async void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (DataContext is IDisposable disposable) disposable.Dispose();
+        if (closeReady) return;
+        e.Cancel = true;
+        if (closePending) return;
+        closePending = true;
+        try
+        {
+            if (DataContext is MainViewModel viewModel) await viewModel.ShutdownAsync();
+        }
+        catch (Exception error)
+        {
+            new AudioConverter.Infrastructure.Storage.LocalDiagnosticLog().Write("Shutdown", error.Message);
+        }
+        closeReady = true;
+        _ = Dispatcher.BeginInvoke(new Action(Close));
     }
 }

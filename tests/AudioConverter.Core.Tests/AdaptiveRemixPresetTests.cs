@@ -10,18 +10,39 @@ public sealed class AdaptiveRemixPresetTests
     {
         var presets = RemixPresetCatalog.All;
 
-        Assert.AreEqual(32, presets.Count);
+        Assert.AreEqual(33, presets.Count);
         CollectionAssert.AreEquivalent(
             Enum.GetValues<RemixPresetCategory>(),
             presets.Select(item => item.Category).Distinct().ToArray());
         Assert.AreEqual(RemixPresetCategory.SpeedPitch, presets.Single(item => item.Preset == RemixPreset.SlowedReverb).Category);
         Assert.AreEqual(RemixPresetCategory.Mastering, presets.Single(item => item.Preset == RemixPreset.StreamingMaster).Category);
+        Assert.AreEqual(RemixPresetCategory.ColorTexture, presets.Single(item => item.Preset == RemixPreset.Earrape).Category);
         foreach (var preset in presets)
         foreach (var intensity in Enum.GetValues<RemixIntensity>())
         {
             var rack = RemixPresetFactory.CreateAdaptive(preset.Preset, intensity, Analysis()).Rack;
             RemixRackValidator.Validate(rack, 180);
         }
+    }
+
+    [TestMethod]
+    public void Earrape_UsesFixedMaximumRackForEveryIntensity()
+    {
+        var light = RemixPresetFactory.CreateAdaptive(RemixPreset.Earrape, RemixIntensity.Light, Analysis());
+        var strong = RemixPresetFactory.CreateAdaptive(RemixPreset.Earrape, RemixIntensity.Strong, Analysis());
+
+        CollectionAssert.AreEqual(light.Rack.ToArray(), strong.Rack.ToArray());
+        Assert.AreEqual(10, light.Rack.OfType<BassEffect>().Single().GainDb);
+        Assert.AreEqual(4, light.Rack.OfType<EqualizerEffect>().Single().LowGainDb);
+        Assert.AreEqual(24, light.Rack.OfType<DistortionEffect>().Single().DriveDb);
+        Assert.AreEqual(1, light.Rack.OfType<DistortionEffect>().Single().Threshold);
+        Assert.IsFalse(light.Rack.OfType<BitCrusherEffect>().Any());
+        Assert.AreEqual(9, light.Rack.OfType<CompressorEffect>().Single().MakeupDb);
+        Assert.AreEqual(-6, light.Rack.OfType<CompressorEffect>().Single().ThresholdDb);
+        Assert.AreEqual(6, light.Rack.OfType<VolumeEffect>().Single().GainDb);
+        Assert.IsFalse(light.Rack.OfType<LoudnessNormalizeEffect>().Any());
+        Assert.AreEqual(-0.1, light.Rack.OfType<SoftLimiterEffect>().Single().CeilingDb);
+        Assert.IsFalse(light.IsAdaptive);
     }
 
     [TestMethod]

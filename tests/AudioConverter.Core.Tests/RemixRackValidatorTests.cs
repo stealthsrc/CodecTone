@@ -56,4 +56,12 @@ public sealed class RemixRackValidatorTests
         Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new LowPassEffect(500)], 120));
         Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new SoftLimiterEffect(0)], 120));
     }
+
+    [TestMethod]
+    public void Validate_RejectsUnsafeExtremeEffectValues()
+    {
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new DistortionEffect(40, 0.03, 4)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new BitCrusherEffect(0, 16, 1)], 120));
+        Assert.ThrowsException<ArgumentException>(() => RemixRackValidator.Validate([new BitCrusherEffect(3, 300, 1)], 120));
+    }
 }

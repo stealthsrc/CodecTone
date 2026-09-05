@@ -59,7 +59,7 @@ public sealed class RemixCommandBuilderTests
 
         CollectionAssert.Contains(args.ToList(), "pcm_s16le");
         var filter = args[Array.IndexOf(args, "-af") + 1];
-        StringAssert.StartsWith(filter, "atrim=start=25:end=45,asetpts=PTS-STARTPTS,bass=");
+        StringAssert.EndsWith(filter, "atrim=start=25:end=45,asetpts=PTS-STARTPTS");
     }
 
     [TestMethod]
@@ -77,7 +77,7 @@ public sealed class RemixCommandBuilderTests
 
         AssertArgumentPair(args, "-i", "hall-ir.wav", occurrence: 2);
         CollectionAssert.Contains(args.ToList(), "-filter_complex");
-        CollectionAssert.Contains(args.ToList(), "[remixout]");
+        CollectionAssert.Contains(args.ToList(), "[previewout]");
     }
 
     private static void AssertArgumentPair(string[] args, string name, string expected, int occurrence)

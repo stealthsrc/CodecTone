@@ -91,7 +91,7 @@ internal static class AudioConverterCli
                     }
                     Console.WriteLine($"\rOK   {input} -> {output}                              "); succeeded++;
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) { Console.WriteLine($"Cancelled: {succeeded} succeeded, {failed} failed before cancellation."); throw; }
                 catch (Exception error) { Console.WriteLine($"FAIL {input}: {error.Message}"); failed++; }
             }
             Console.WriteLine($"Completed: {succeeded} succeeded, {failed} failed"); return failed == 0 ? 0 : 2;
@@ -139,7 +139,7 @@ internal static class AudioConverterCli
 
         var outputRoot = Value(args, "--output-dir", "-o") ?? DefaultCompressionOutput(source);
         var suffix = Value(args, "--suffix") ?? "";
-        var discovered = CompressionFileDiscovery.Find(source, recursive: true)
+        var discovered = CompressionFileDiscovery.Find(source, recursive: true, onSkipped: warning => Console.Error.WriteLine("SKIP folder: " + warning), cancellationToken: cancellationToken)
             .Where(file => !IsInside(file.Path, outputRoot))
             .ToArray();
         if (discovered.Length == 0) throw new InvalidDataException("No supported audio file was found.");
@@ -221,7 +221,7 @@ internal static class AudioConverterCli
                 succeeded++;
                 Console.WriteLine($"\rOK   {file.Source.Path} -> {output}                              ");
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) { Console.WriteLine($"Cancelled: {succeeded} succeeded, {failures.Count} failed before cancellation."); throw; }
             catch (Exception error)
             {
                 completedDuration += file.Source.DurationSeconds;

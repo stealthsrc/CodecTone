@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using AudioConverter.Core.Models;
 using AudioConverter.Infrastructure.Audio;
 
@@ -70,17 +69,16 @@ public sealed class AudioProcessingService(FfmpegTools tools)
         double durationSeconds,
         CancellationToken cancellationToken = default)
     {
+        var source = await probe.ProbeAsync(input, cancellationToken);
+        var expectedSamples = checked((long)Math.Ceiling(durationSeconds * (source.SampleRate ?? 44100) * (source.Channels ?? 1)));
         var info = FfmpegProcessRunner.CreateStartInfo(tools.FfmpegPath, FfmpegCommandBuilder.BuildWaveform(input, width, durationSeconds), true);
         using var process = Process.Start(info) ?? throw new FfmpegExecutionException("FFmpeg n’a pas pu extraire la waveform.");
-        await using var memory = new MemoryStream();
-        var copyTask = process.StandardOutput.BaseStream.CopyToAsync(memory, cancellationToken);
+        var peaksTask = WaveformAggregator.AggregateAsync(process.StandardOutput.BaseStream, width, expectedSamples, cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await Task.WhenAll(copyTask, FfmpegProcessRunner.WaitForExitOrKillAsync(process, cancellationToken));
+        await Task.WhenAll(peaksTask, FfmpegProcessRunner.WaitForExitOrKillAsync(process, cancellationToken));
         var error = await errorTask;
         if (process.ExitCode != 0) throw new FfmpegExecutionException($"Extraction waveform impossible : {error.Trim()}");
-        var bytes = memory.ToArray();
-        if (bytes.Length % 2 != 0) Array.Resize(ref bytes, bytes.Length - 1);
-        return WaveformAggregator.Aggregate(MemoryMarshal.Cast<byte, short>(bytes), width);
+        return await peaksTask;
     }
 
     private async Task RunTransactionalAsync(

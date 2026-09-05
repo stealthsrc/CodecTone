@@ -30,6 +30,7 @@ public static class RemixPresetCatalog
         Item(RemixPreset.VintageWarm, "Vintage Warm", RemixPresetCategory.ColorTexture),
         Item(RemixPreset.DarkTone, "Dark Tone", RemixPresetCategory.ColorTexture),
         Item(RemixPreset.BrightTone, "Bright Tone", RemixPresetCategory.ColorTexture),
+        Item(RemixPreset.Earrape, "EARRAPE", RemixPresetCategory.ColorTexture),
         Item(RemixPreset.CleanMaster, "Clean Master", RemixPresetCategory.Mastering),
         Item(RemixPreset.LoudMaster, "Loud Master", RemixPresetCategory.Mastering),
         Item(RemixPreset.DynamicMaster, "Dynamic Master", RemixPresetCategory.Mastering),

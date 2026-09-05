@@ -36,6 +36,7 @@ public static class RemixPresetFactory
         RemixPreset.WideMaster => [new CompressorEffect(-18, 2, 1), new StereoWidthEffect(1.18), new LoudnessNormalizeEffect(-14), new SoftLimiterEffect(-1)],
         RemixPreset.StreamingMaster => [new CompressorEffect(-20, 1.8, 1), new LoudnessNormalizeEffect(-14), new SoftLimiterEffect(-1)],
         RemixPreset.ClubMaster => [new HighPassEffect(28), new BassEffect(3, 80), new CompressorEffect(-16, 3, 2), new LoudnessNormalizeEffect(-10), new SoftLimiterEffect(-0.8)],
+        RemixPreset.Earrape => [new BassEffect(10, 85), new EqualizerEffect(4, 3, 2), new DistortionEffect(24, 1, 4), new CompressorEffect(-6, 8, 9), new VolumeEffect(6), new SoftLimiterEffect(-0.1)],
         _ => throw new ArgumentOutOfRangeException(nameof(preset)),
     };
 
@@ -44,6 +45,8 @@ public static class RemixPresetFactory
         RemixIntensity intensity,
         AudioAnalysis? analysis)
     {
+        if (preset == RemixPreset.Earrape)
+            return new AdaptiveRemixRack(Create(preset), false, "Fixed maximum preset; adaptive analysis and global intensity are bypassed.");
         var rack = Create(preset).Select(effect => ApplyIntensity(effect, intensity)).ToArray();
         if (analysis is null)
             return new AdaptiveRemixRack(rack, false, "Analysis unavailable; using safe static defaults.");

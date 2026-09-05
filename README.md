@@ -1,6 +1,6 @@
 # CodecTone
 
-CodecTone converts, compresses, and cuts audio files locally on Windows with FFmpeg. It provides a WPF interface and a command-line executable. Media processing does not use cloud storage or telemetry.
+CodecTone converts, compresses, cuts, remixes, and extracts embedded album artwork locally on Windows with FFmpeg. It provides a WPF interface and a command-line executable. Media processing does not use cloud storage or telemetry.
 
 Repository: [github.com/stealthsrc/CodecTone](https://github.com/stealthsrc/CodecTone)
 
@@ -35,13 +35,18 @@ release\cli\CodecTone.Cli.exe
 
 ## Usage
 
-The GUI contains four workspaces:
+The GUI contains five tool workspaces and an About page:
 
 - **CONVERT** processes one file or a non-recursive folder batch.
 - **CUT AUDIO** selects a waveform range, applies fades, previews it, and exports it.
 - **COMPRESS AUDIO** uses quality profiles or a total-size budget and scans folders recursively.
-- **REMIX AUDIO** applies twelve editable presets or an ordered effect rack to one song and edits its metadata.
+- **EXTRACT ARTWORK** extracts one embedded front cover per album as the original image, PNG, JPEG, or WebP.
+- **REMIX AUDIO** applies 33 categorized presets or an ordered effect rack to one song and edits its metadata. The EARRAPE preset displays an explicit hearing warning.
 - **ABOUT** explains the local processing pipeline and links to the maintainer profile.
+
+In Remix, use PREVIEW ORIGINAL and PREVIEW REMIX to compare the same source interval. Preview volume defaults to 25%, applies on the next playback, and does not affect exports.
+
+In Extract Artwork, analyze a folder, select an album, then choose PREVIEW COVER. SAVE REPORT exports the current report to text. About provides OPEN LOCAL DIAGNOSTICS; the rotating log stays local and can include file paths.
 
 Supported source formats are MP3, FLAC, WAV, OGG, AAC, and M4A. Compression destinations exclude WAV because it generally does not reduce file size.
 
@@ -81,7 +86,7 @@ Install the pinned managed FFmpeg build:
 release\cli\CodecTone.Cli.exe --install-ffmpeg
 ```
 
-Run the tests without encoding audio:
+Run the full suite (FFmpeg integration tests encode synthetic fixtures):
 
 ```console
 dotnet test AudioConverter.sln -c Release
@@ -115,9 +120,10 @@ dotnet test AudioConverter.sln -c Release
 - Target-total-size mode is unavailable for lossless FLAC output.
 - WAV, raw AAC, and OGG output do not receive embedded cover art.
 - Metadata support depends on the source and destination containers.
-- Preview supports Play and Stop, without pause or cursor scrubbing.
-- A running FFmpeg operation cannot currently be cancelled from the GUI.
+- Preview supports Play and Stop, without pause or cursor scrubbing. Rendering late excerpts processes preceding audio to preserve effects and fades.
+- Preview loudness normalization is single-pass; final export uses two-pass measurements and may sound different.
 - Remix processes one song at a time and does not load VST plugins.
+- Artwork extraction does not search online services or modify source audio files.
 - Video conversion, web services, cloud storage, and telemetry are not implemented.
 
 ## License

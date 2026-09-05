@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using AudioConverter.Core.Models;
+using AudioConverter.Core.Artwork;
 
 namespace AudioConverter.Infrastructure.Ffmpeg;
 
@@ -13,6 +14,7 @@ public static class FfprobeParser
         var streams = root.GetProperty("streams");
         JsonElement? audio = null;
         var hasCover = false;
+        var artwork = new List<EmbeddedArtworkInfo>();
         foreach (var stream in streams.EnumerateArray())
         {
             if (stream.TryGetProperty("codec_type", out var type) && type.GetString() == "audio" && audio is null)
@@ -24,6 +26,21 @@ public static class FfprobeParser
                 && attached.GetInt32() == 1)
             {
                 hasCover = true;
+            }
+            if (stream.TryGetProperty("codec_type", out var streamType) && streamType.GetString() == "video")
+            {
+                var imageAttached = stream.TryGetProperty("disposition", out var imageDisposition)
+                    && imageDisposition.TryGetProperty("attached_pic", out var attachedValue)
+                    && attachedValue.GetInt32() == 1;
+                if (!imageAttached) continue;
+                var imageTag = ReadTag(stream, "comment") ?? ReadTag(stream, "title") ?? "";
+                artwork.Add(new EmbeddedArtworkInfo(
+                    ReadInt(stream, "index") ?? artwork.Count,
+                    ReadString(stream, "codec_name") ?? "unknown",
+                    ReadInt(stream, "width"),
+                    ReadInt(stream, "height"),
+                    imageAttached,
+                    imageTag.Contains("front", StringComparison.OrdinalIgnoreCase)));
             }
         }
         if (audio is null)
@@ -52,7 +69,8 @@ public static class FfprobeParser
             ReadLong(format, "size"),
             ToKbps(ReadLong(audio.Value, "bit_rate")),
             ToKbps(ReadLong(format, "bit_rate")),
-            ReadInt(audio.Value, "channels"));
+            ReadInt(audio.Value, "channels"),
+            artwork);
     }
 
     private static string? ReadString(JsonElement element, string name) =>
@@ -70,4 +88,7 @@ public static class FfprobeParser
     private static int? ToKbps(long? bitsPerSecond) => bitsPerSecond is null
         ? null
         : (int)(bitsPerSecond.Value / 1000);
+
+    private static string? ReadTag(JsonElement element, string name) =>
+        element.TryGetProperty("tags", out var tags) && tags.TryGetProperty(name, out var value) ? value.ToString() : null;
 }
